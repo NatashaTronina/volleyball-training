@@ -26,7 +26,7 @@ def create_poll_command(message):
     if is_admin(message):
         chat_id = message.chat.id
         poll_data[chat_id] = []  # Инициализируем список вариантов
-
+        # Сразу предлагаем добавить первый вариант
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 27.03):")
         bot.register_next_step_handler(message, get_date)
     else:
@@ -60,7 +60,7 @@ def get_day_of_week(message):
         poll_data[chat_id][-1]['day'] = day
 
         bot.send_message(message.chat.id, "Введите время тренировки в формате ЧЧ-ММ (например, 12-00):",
-                        reply_markup=types.ReplyKeyboardRemove())
+                         reply_markup=types.ReplyKeyboardRemove())
         bot.register_next_step_handler(message, get_time)
     else:
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
@@ -68,7 +68,7 @@ def get_day_of_week(message):
         for day_name in days:  # Используем другое имя переменной, чтобы не путать с 'day'
             keyboard.add(types.KeyboardButton(day_name))
         bot.send_message(message.chat.id, "Неверный день недели. Пожалуйста, выберите из предложенных вариантов:",
-                        reply_markup=keyboard)
+                         reply_markup=keyboard)
         bot.register_next_step_handler(message, get_day_of_week)
 
 # Получение времени
@@ -133,7 +133,7 @@ def get_location(message):
         bot.send_message(message.chat.id, "Добавить комментарий к тренировке?", reply_markup=keyboard)
         bot.register_next_step_handler(message, handle_comment_choice)
     else:
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)  # Определите keyboard здесь
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(types.KeyboardButton("Гимназия"), types.KeyboardButton("Энергия"))
         bot.send_message(message.chat.id, "Неверное место проведения. Пожалуйста, выберите из предложенных вариантов:",
                         reply_markup=keyboard)
@@ -149,11 +149,20 @@ def handle_comment_choice(message):
         bot.register_next_step_handler(message, get_comment)
     elif choice == "Пропустить":
         poll_data[chat_id][-1]['comment'] = ""  # Сохраняем пустую строку как комментарий
-        # После ввода всех данных - предлагаем добавить еще или закончить
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Добавить еще вариант"), types.KeyboardButton("Создать опрос"))
-        bot.send_message(message.chat.id, "Что дальше?", reply_markup=keyboard)
-        bot.register_next_step_handler(message, next_action)
+        # Проверяем, достаточно ли вариантов для создания опроса
+        if len(poll_data[chat_id]) < 2:
+            bot.send_message(chat_id, "Необходимо добавить как минимум два варианта тренировок.")
+            # Сразу предлагаем добавить еще один вариант - Inline кнопка
+            keyboard = types.InlineKeyboardMarkup()
+            button_add = types.InlineKeyboardButton(text="Добавить еще вариант", callback_data='add_option')
+            keyboard.add(button_add)
+            bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+        else:
+            # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+            bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+            bot.register_next_step_handler(message, next_action)
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных вариантов:")
         bot.register_next_step_handler(message, handle_comment_choice)
@@ -162,18 +171,109 @@ def handle_comment_choice(message):
 def get_comment(message):
     comment = message.text
     chat_id = message.chat.id
-    poll_data[chat_id][-1]['comment'] = comment
 
-    # После ввода всех данных - предлагаем добавить еще или закончить
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(types.KeyboardButton("Добавить еще вариант"), types.KeyboardButton("Создать опрос"))
-    bot.send_message(message.chat.id, "Что дальше?", reply_markup=keyboard)
-    bot.register_next_step_handler(message, next_action)
+    # Проверяем, достаточно ли вариантов для создания опроса
+    if len(poll_data[chat_id]) < 2:
+        bot.send_message(chat_id, "Необходимо добавить как минимум два варианта тренировок.")
+        # Сразу предлагаем добавить еще один вариант - Inline кнопка
+        keyboard = types.InlineKeyboardMarkup()
+        button_add = types.InlineKeyboardButton(text="Добавить еще вариант", callback_data='add_option')
+        keyboard.add(button_add)
+        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+
+    else:
+        # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+        bot.register_next_step_handler(message, next_action)
+
+# Создание и отправка опроса
+def create_and_send_poll(message):
+    chat_id = message.chat.id
+    options = []
+    for option in poll_data[chat_id]:
+        date = option['date']
+        day = option['day']
+        time = option['time']
+        training_type = option['training_type']
+        price = option['price']
+        location = option['location']
+        comment = option.get('comment', '')
+        options.append(f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}")
+
+    question = "Волейбол - выберите подходящий вариант:"
+
+    try:
+        # Отправляем опрос
+        sent_poll = bot.send_poll(chat_id, question=question, options=options, is_anonymous=False,
+                                    allows_multiple_answers=True)  # allow_multiple_answers=True - можно выбирать несколько вариантов
+
+        poll_id = sent_poll.poll.id  # Получаем ID созданного опроса
+
+        # Инициализируем результаты для этого опроса
+        poll_results[poll_id] = {}
+        for i in range(len(options)):
+            poll_results[poll_id][i] = 0
+
+        # Создаем кнопки
+        keyboard = types.InlineKeyboardMarkup()
+        button_correct = types.InlineKeyboardButton(text="Опрос верный", callback_data=f'poll_correct_{poll_id}')
+        button_edit = types.InlineKeyboardButton(text="Пересоздать опрос", callback_data=f'poll_edit_{poll_id}')
+        keyboard.add(button_correct, button_edit)
+
+        # Отправляем сообщение с кнопками
+        bot.send_message(chat_id, "Подтвердите опрос:", reply_markup=keyboard)
+
+    except Exception as e:
+        bot.send_message(chat_id, f"Не удалось создать опрос: {e}")  # Обработка ошибок
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('poll_correct') or call.data.startswith('poll_edit') or call.data == 'add_option')
+def callback_query(call):
+    chat_id = call.message.chat.id
+    callback_data = call.data
+
+    if callback_data.startswith('poll_correct'):
+        # Действия, если опрос верный
+        bot.send_message(chat_id, "Отлично! Теперь отправьте QR-код для оплаты тренировок (как изображение).")
+        bot.register_next_step_handler(call.message, handle_qr_code) #  Переходим к обработке QR-кода
+
+    elif callback_data.startswith('poll_edit'):
+        # Действия, если нужно пересоздать опрос
+        bot.send_message(chat_id, "Начинаем пересоздание опроса...")
+        # Возвращаемся к началу создания опроса
+        poll_data[chat_id].clear()  # Очищаем данные для пересоздания
+        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 27.03):")
+        bot.register_next_step_handler(call.message, get_date)
+    elif callback_data == 'add_option':
+        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 27.03):")
+        bot.register_next_step_handler(call.message, get_date) # Возврат к запросу даты
+
+# Обработчик QR-кода (фотографии)
+def handle_qr_code(message):
+    chat_id = message.chat.id
+
+    if message.photo:
+        #  Получаем информацию о фотографии
+        file_info = bot.get_file(message.photo[-1].file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+
+        #  Сохраняем QR-код (в данном случае, просто для примера)
+        #  В РЕАЛЬНОМ КОДЕ ЗДЕСЬ НУЖНО СОХРАНИТЬ ФАЙЛ
+        #  Например:
+        #  with open("qr_code.jpg", 'wb') as new_file:
+        #     new_file.write(downloaded_file)
+
+        bot.send_message(chat_id, "QR-код сохранен.")
+    else:
+        bot.send_message(chat_id, "Пожалуйста, отправьте QR-код как *изображение*.", parse_mode="Markdown") # Предупреждение, если отправлено не изображение
 
 # Обработка выбора - добавить еще или создать опрос
+@bot.message_handler(func=lambda message: True)  # Ловим любой текстовый ответ
 def next_action(message):
     action = message.text
     chat_id = message.chat.id
+
     if action == "Добавить еще вариант":
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 27.03):",
                         reply_markup=types.ReplyKeyboardRemove())  # Убираем клаву
@@ -183,41 +283,11 @@ def next_action(message):
         create_and_send_poll(message)
     else:
         bot.send_message(chat_id, "Неверный выбор. Пожалуйста, выберите из предложенных вариантов:")
-        bot.register_next_step_handler(message, next_action)
-
-# Создание и отправка опроса
-def create_and_send_poll(message):
-    chat_id = message.chat.id
-    if chat_id in poll_data and len(poll_data[chat_id]) >= 2:
-        options = []
-        for option in poll_data[chat_id]:
-            date = option['date']
-            day = option['day']
-            time = option['time']
-            training_type = option['training_type']
-            price = option['price']
-            location = option['location']
-            comment = option.get('comment', '')
-            options.append(f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}")
-
-        question = "Волейбол - выберите подходящий вариант:"
-
-        try:
-            # Отправляем опрос
-            sent_poll = bot.send_poll(chat_id, question=question, options=options, is_anonymous=False,
-                                        allows_multiple_answers=True)  # allow_multiple_answers=True - можно выбирать несколько вариантов
-
-            poll_id = sent_poll.poll.id  # Получаем ID созданного опроса
-
-            # Инициализируем результаты для этого опроса
-            poll_results[poll_id] = {}
-            for i in range(len(options)):
-                poll_results[poll_id][i] = 0
-
-        except Exception as e:
-            bot.send_message(chat_id, f"Не удалось создать опрос: {e}")  # Обработка ошибок
-    else:
-        bot.send_message(chat_id, "Необходимо добавить как минимум два варианта тренировок для создания опроса.")
+        # Опять предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+        bot.register_next_step_handler(message, next_action) # Запускаем заново обработчик
 
 @bot.poll_answer_handler()  # Ловим ответы на опросы
 def handle_poll_answer(poll_answer):
@@ -232,35 +302,19 @@ def handle_poll_answer(poll_answer):
         print(f"WARNING: poll_id {poll_id} not found in poll_results")
         return
 
-    # Получаем текст вариантов из poll_data (предполагаем, что он соответствует вариантам в опросе)
-    options = []
-    if ADMIN_ID in poll_data: #  Убедимся, что ADMIN_ID есть в poll_data
-        for option in poll_data[ADMIN_ID]:
-            date = option['date']
-            day = option['day']
-            time = option['time']
-            training_type = option['training_type']
-            price = option['price']
-            location = option['location']
-            comment = option.get('comment', '')
-            options.append(f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}")
-    else:
-       print(f"WARNING: ADMIN_ID {ADMIN_ID} not found in poll_data")
-       return
-
     # Создаем копию poll_results[poll_id], чтобы избежать изменения во время итерации
     poll_results_copy = poll_results[poll_id].copy()
 
     # Сначала уменьшаем голоса для всех опций, которые раньше были выбраны этим пользователем, но теперь не выбраны
     for i in poll_results_copy:
-        if i not in option_ids and poll_results_copy[i] > 0: #  Если вариант больше не выбран и за него кто-то голосовал
+        if i not in option_ids and poll_results_copy[i] > 0:  # Если вариант больше не выбран и за него кто-то голосовал
             poll_results[poll_id][i] -= 1  # Уменьшаем кол-во голосов
 
     # Теперь увеличиваем голоса для тех опций, которые были выбраны, но ранее не были
     for i in option_ids:
         if i not in poll_results_copy:
-            poll_results[poll_id][i] = 0  #  Если такого варианта еще нет - создаем
-        if i not in poll_results_copy or poll_results_copy[i] == 0: # Если вариант новый или за него никто не голосовал
+            poll_results[poll_id][i] = 0  # Если такого варианта еще нет - создаем
+        if i not in poll_results_copy or poll_results_copy[i] == 0:  # Если вариант новый или за него никто не голосовал
             poll_results[poll_id][i] += 1  # Увеличиваем кол-во голосов
 
 if __name__ == "__main__":
