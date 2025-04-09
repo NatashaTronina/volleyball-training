@@ -3,7 +3,7 @@ import telebot
 from telebot import types
 
 # Замените на свой токен
-TOKEN = "8168346913:AAGRZOpM82osSB4fUuWrbzWtVLwkeS4hzO0"  # Замените на токен вашего бота
+TOKEN = "8129343330:AAGIEW_tVihFH_dT9jEADmYShO8ZluWJpDs"  
 bot = telebot.TeleBot(TOKEN)
 
 # ID администратора (замените на свой ID)
@@ -149,11 +149,20 @@ def handle_comment_choice(message):
         bot.register_next_step_handler(message, get_comment)
     elif choice == "Пропустить":
         poll_data[chat_id][-1]['comment'] = ""  # Сохраняем пустую строку как комментарий
-        # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
-        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-        bot.register_next_step_handler(message, next_action)
+        # Проверяем, достаточно ли вариантов для создания опроса
+        if len(poll_data[chat_id]) < 2:
+            bot.send_message(chat_id, "Необходимо добавить как минимум два варианта тренировок.")
+            # Сразу предлагаем добавить еще один вариант - Inline кнопка
+            keyboard = types.InlineKeyboardMarkup()
+            button_add = types.InlineKeyboardButton(text="Добавить еще вариант", callback_data='add_option')
+            keyboard.add(button_add)
+            bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+        else:
+            # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+            bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+            bot.register_next_step_handler(message, next_action)
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных вариантов:")
         bot.register_next_step_handler(message, handle_comment_choice)
@@ -162,12 +171,22 @@ def handle_comment_choice(message):
 def get_comment(message):
     comment = message.text
     chat_id = message.chat.id
-    # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
-    bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-    bot.register_next_step_handler(message, next_action)
 
+    # Проверяем, достаточно ли вариантов для создания опроса
+    if len(poll_data[chat_id]) < 2:
+        bot.send_message(chat_id, "Необходимо добавить как минимум два варианта тренировок.")
+        # Сразу предлагаем добавить еще один вариант - Inline кнопка
+        keyboard = types.InlineKeyboardMarkup()
+        button_add = types.InlineKeyboardButton(text="Добавить еще вариант", callback_data='add_option')
+        keyboard.add(button_add)
+        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+
+    else:
+        # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+        bot.register_next_step_handler(message, next_action)
 
 # Создание и отправка опроса
 def create_and_send_poll(message):
@@ -183,7 +202,6 @@ def create_and_send_poll(message):
         comment = option.get('comment', '')
         options.append(f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}")
 
-    options.append("Не пойду на волейбол")
     question = "Волейбол - выберите подходящий вариант:"
 
     try:
