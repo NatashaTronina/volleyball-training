@@ -3,7 +3,7 @@ import telebot
 from telebot import types
 
 # Замените на свой токен
-TOKEN = "8129343330:AAGIEW_tVihFH_dT9jEADmYShO8ZluWJpDs"  
+TOKEN = "8168346913:AAGRZOpM82osSB4fUuWrbzWtVLwkeS4hzO0"  # Замените на токен вашего бота
 bot = telebot.TeleBot(TOKEN)
 
 # ID администратора (замените на свой ID)
@@ -42,7 +42,7 @@ def get_date(message):
         poll_data[chat_id].append({'date': date})
 
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+        days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
         for day in days:
             keyboard.add(types.KeyboardButton(day))
         bot.send_message(message.chat.id, "Выберите день недели:", reply_markup=keyboard)
@@ -56,7 +56,7 @@ def get_day_of_week(message):
     day = message.text
     chat_id = message.chat.id
 
-    if day in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]:
+    if day in ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]:
         poll_data[chat_id][-1]['day'] = day
 
         bot.send_message(message.chat.id, "Введите время тренировки в формате ЧЧ-ММ (например, 12-00):",
@@ -64,7 +64,7 @@ def get_day_of_week(message):
         bot.register_next_step_handler(message, get_time)
     else:
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+        days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
         for day_name in days:  # Используем другое имя переменной, чтобы не путать с 'day'
             keyboard.add(types.KeyboardButton(day_name))
         bot.send_message(message.chat.id, "Неверный день недели. Пожалуйста, выберите из предложенных вариантов:",
@@ -78,7 +78,7 @@ def get_time(message):
     if re.match(r"^\d{2}[:-]\d{2}$", time):  # Проверка формата времени
         poll_data[chat_id][-1]['time'] = time
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техничка"))
+        keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
         bot.send_message(message.chat.id, "Выберите тип тренировки:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_training_type)
     else:
@@ -89,7 +89,7 @@ def get_time(message):
 def get_training_type(message):
     training_type = message.text
     chat_id = message.chat.id
-    if training_type in ["Игровая", "Техничка"]:
+    if training_type in ["Игровая", "Техническая"]:
         poll_data[chat_id][-1]['training_type'] = training_type
 
         # Запрашиваем цену
@@ -97,7 +97,7 @@ def get_training_type(message):
         bot.register_next_step_handler(message, get_price)
     else:
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техничка"))
+        keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
         bot.send_message(message.chat.id, "Неверный тип тренировки. Пожалуйста, выберите из предложенных вариантов:",
                         reply_markup=keyboard)
         bot.register_next_step_handler(message, get_training_type)
@@ -149,20 +149,11 @@ def handle_comment_choice(message):
         bot.register_next_step_handler(message, get_comment)
     elif choice == "Пропустить":
         poll_data[chat_id][-1]['comment'] = ""  # Сохраняем пустую строку как комментарий
-        # Проверяем, достаточно ли вариантов для создания опроса
-        if len(poll_data[chat_id]) < 2:
-            bot.send_message(chat_id, "Необходимо добавить как минимум два варианта тренировок.")
-            # Сразу предлагаем добавить еще один вариант - Inline кнопка
-            keyboard = types.InlineKeyboardMarkup()
-            button_add = types.InlineKeyboardButton(text="Добавить еще вариант", callback_data='add_option')
-            keyboard.add(button_add)
-            bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-        else:
-            # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
-            bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-            bot.register_next_step_handler(message, next_action)
+        # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+        bot.register_next_step_handler(message, next_action)
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных вариантов:")
         bot.register_next_step_handler(message, handle_comment_choice)
@@ -171,22 +162,12 @@ def handle_comment_choice(message):
 def get_comment(message):
     comment = message.text
     chat_id = message.chat.id
+    # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+    bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
+    bot.register_next_step_handler(message, next_action)
 
-    # Проверяем, достаточно ли вариантов для создания опроса
-    if len(poll_data[chat_id]) < 2:
-        bot.send_message(chat_id, "Необходимо добавить как минимум два варианта тренировок.")
-        # Сразу предлагаем добавить еще один вариант - Inline кнопка
-        keyboard = types.InlineKeyboardMarkup()
-        button_add = types.InlineKeyboardButton(text="Добавить еще вариант", callback_data='add_option')
-        keyboard.add(button_add)
-        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-
-    else:
-        # Предлагаем выбор: создать опрос или добавить еще вариант - ReplyKeyboardMarkup
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
-        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-        bot.register_next_step_handler(message, next_action)
 
 # Создание и отправка опроса
 def create_and_send_poll(message):
@@ -202,6 +183,7 @@ def create_and_send_poll(message):
         comment = option.get('comment', '')
         options.append(f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}")
 
+    options.append("Не пойду на волейбол")
     question = "Волейбол - выберите подходящий вариант:"
 
     try:
@@ -257,13 +239,6 @@ def handle_qr_code(message):
         #  Получаем информацию о фотографии
         file_info = bot.get_file(message.photo[-1].file_id)
         downloaded_file = bot.download_file(file_info.file_path)
-
-        #  Сохраняем QR-код (в данном случае, просто для примера)
-        #  В РЕАЛЬНОМ КОДЕ ЗДЕСЬ НУЖНО СОХРАНИТЬ ФАЙЛ
-        #  Например:
-        #  with open("qr_code.jpg", 'wb') as new_file:
-        #     new_file.write(downloaded_file)
-
         bot.send_message(chat_id, "QR-код сохранен.")
     else:
         bot.send_message(chat_id, "Пожалуйста, отправьте QR-код как *изображение*.", parse_mode="Markdown") # Предупреждение, если отправлено не изображение
