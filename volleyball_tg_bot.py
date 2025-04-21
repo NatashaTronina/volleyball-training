@@ -13,37 +13,26 @@ bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    item1 = types.KeyboardButton("Проголосовать")
-    item2 = types.KeyboardButton("Статус оплаты")
-    item3 = types.KeyboardButton("Помощь")
-    markup.add(item1, item2, item3)
+    bot.reply_to(message, "Привет! Я ваш бот. С помощью меня вы можете выбрать тренировки по волейболу, на которые пойдете.\n Для получения справки используйте /help.")
 
+@bot.message_handler(commands=['status'])
+def status(message):
+    user_id = message.from_user.id
+    # Здесь нужно реализовать логику проверки статуса оплаты пользователя.
+    # Это может включать запрос к базе данных, API оплаты и т.д.
+    try:
+        # Замените на вашу логику
+        payment_status = "Оплачено"  # Пример
+        bot.reply_to(message, f"Ваш статус оплаты: {payment_status}")
+    except Exception as e:
+        bot.reply_to(message, f"Ошибка при проверке статуса оплаты: {e}")
 
-    bot.send_message(message.chat.id, "Выберите действие:", reply_markup=markup)
-
-@bot.message_handler(commands=['poll'])
-def send_poll(message):
-    chat_id = message.chat.id
-    if chat_id in poll_data and poll_data[chat_id]:
-        # Отправляем последний созданный опрос
-        last_poll = poll_data[chat_id][-1]  # Получаем последний опрос
-        options = [f"{option['date']} {option['time']} - {option['training_type']} ({option['location']}, {option['price']} руб.) {option.get('comment', '')}" for option in poll_data[chat_id]]
-        options.append("Не пойду на волейбол")
-        question = "Волейбол - выберите подходящий вариант:"
-        
-        sent_poll = bot.send_poll(chat_id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
-    else:
-        bot.send_message(chat_id, "Нет доступных опросов.")
-
-
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    if message.text == "Статус оплаты":
-        bot.send_message(message.chat.id, "Вы выбрали 'Статус оплаты'")
-    elif message.text == "Помощь":
-        bot.send_message(message.chat.id, "Вам нужно нажать кнопку 'Проголосовать', чтобы выбрать тренировки")
-
-if __name__ == "__main__":
-    print("Bot started!")
-    bot.polling()
+@bot.message_handler(commands=['help'])
+def help(message):
+    help_text = """
+    Список команд:
+    /start - начало работы с ботом
+    /status - проверка своего статуса оплаты
+    /help - получение справки
+    """
+    bot.reply_to(message, help_text)

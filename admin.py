@@ -6,6 +6,7 @@ import os
 import datetime
 from DATE import get_day_of_week
 
+
 data = ""
 with open('config.json', 'r') as file:
     data = json.load(file)
@@ -14,11 +15,11 @@ TOKEN = data.get("token")
 
 bot = telebot.TeleBot(TOKEN)
 
-ADMIN_ID = 494635818
+ADMIN_ID = [494635818]
 poll_data = {}
 poll_results = {}
 
-POLL_DATA_FILE = "poll_data.json"
+POLL_DATA_FILE = "polls.json"
 QR_CODE_DIR = "qr_codes"
 
 if not os.path.exists(QR_CODE_DIR):
@@ -37,7 +38,35 @@ def load_polls():
 poll_data = load_polls()
 
 def is_admin(message):
-    return message.from_user.id == ADMIN_ID
+    return message.from_user.id in ADMIN_ID
+
+
+def set_commands():
+    # ВСЕ ПОЛЬЗОВАТЕЛИ
+    default_commands = [
+        telebot.types.BotCommand("start", "Начать работу с ботом"),
+        telebot.types.BotCommand("status", "Проверить свой статус оплаты"),
+        telebot.types.BotCommand("help", "Получить справку")
+    ]
+    bot.set_my_commands(commands=default_commands)
+    # ТОЛЬКО АДМИН
+    for admin_id in ADMIN_ID:
+        admin_scope = telebot.types.BotCommandScopeChat(chat_id=admin_id)  # Измените здесь
+        admin_commands = [
+            telebot.types.BotCommand("create_poll", "Создать опрос"),
+            telebot.types.BotCommand("check_payments", "Проверить статусы оплат"),
+            telebot.types.BotCommand("edit_list", "Редактировать список"),
+            telebot.types.BotCommand("confirm_list", "Подтвердить список")
+        ]
+        bot.set_my_commands(commands=admin_commands, scope=admin_scope)
+
+
+@bot.message_handler(commands=['start'])
+def create_poll_command(message):
+    if is_admin(message):
+        chat_id = message.chat.id
+        bot.send_message(chat_id, "Выберите команду /create_poll для создания опроса")
+
 
 @bot.message_handler(commands=['create_poll'])
 def create_poll_command(message):
@@ -46,7 +75,7 @@ def create_poll_command(message):
         if chat_id not in poll_data:
             poll_data[chat_id] = []  # Инициализируем список для администратора
         
-        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 18.04):")
+        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 21.04):")
         bot.register_next_step_handler(message, get_date)  # Запрашиваем дату сразу
     else:
         bot.send_message(message.chat.id, "У вас нет прав для создания опросов.")
@@ -96,7 +125,7 @@ def get_training_type(message):
     else:
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
-        bot.send_message(message.chat.id, "Н еверный тип тренировки. Пожалуйста, выберите из предложенных вариантов:", reply_markup=keyboard)
+        bot.send_message(message.chat.id, "Неверный тип тренировки. Пожалуйста, выберите из предложенных вариантов:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_training_type)
 
 def get_price(message):
@@ -215,7 +244,7 @@ def callback_query(call):
         bot.send_message(chat_id, "Начинаем пересоздание опроса...")
         poll_data[chat_id].clear()
         save_polls()  # Сохраняем изменения после очистки
-        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 27.03):")
+        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 21.04):")
         bot.register_next_step_handler(call.message, get_date)
 
 def handle_qr_code(message):
@@ -233,23 +262,27 @@ def handle_qr_code(message):
     else:
         bot.send_message(chat_id, "Пожалуйста, отправьте QR-код как *изображение*.", parse_mode="Markdown")
 
+
 @bot.message_handler(func=lambda message: True)
 def next_action(message):
     action = message.text
     chat_id = message.chat.id
 
-    if action == "Добавить еще вариант":
-        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 27.03):",
-        reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(message, get_date)
-    elif action == "Создать опрос":
-        create_and_send_poll(message)
+    if is_admin(message):
+        if action == "Добавить еще вариант":
+            bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 27.03):",
+                             reply_markup=types.ReplyKeyboardRemove())
+            bot.register_next_step_handler(message, get_date)
+        elif action == "Создать опрос":
+            create_and_send_poll(message)
+        else:
+            # Если администратор ввел неверный вариант
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+            bot.send_message(chat_id, "Пожалуйста, выберите из предложенных вариантов:", reply_markup=keyboard)
+            bot.register_next_step_handler(message, next_action)
     else:
-        bot.send_message(chat_id, "Неверный выбор. Пожалуйста, выберите из предложенных вариантов:")
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
-        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-        bot.register_next_step_handler(message, next_action)
+        bot.send_message(chat_id, "У вас нет прав для выполнения этой команды.")
 
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):
@@ -277,4 +310,5 @@ def handle_poll_answer(poll_answer):
 
 if __name__ == "__main__":
     print("Bot started!")
+    set_commands()
     bot.polling()
