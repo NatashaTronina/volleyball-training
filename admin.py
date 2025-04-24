@@ -72,9 +72,13 @@ def create_poll_command(message):
 def create_poll_command(message):
     if is_admin(message):
         chat_id = message.chat.id
+        # Инициализируем список для администратора, если он еще не существует
         if chat_id not in poll_data:
-            poll_data[chat_id] = []  # Инициализируем список для администратора
+            poll_data[chat_id] = []  
         
+        # Очищаем предыдущие опросы для данного администратора
+        poll_data[chat_id].clear()  # Удаляем старые опросы, если есть
+
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 21.04):")
         bot.register_next_step_handler(message, get_date)  # Запрашиваем дату сразу
     else:
@@ -84,11 +88,17 @@ def get_date(message):
     date = message.text
     chat_id = message.chat.id
     if re.match(r"^\d{2}\.\d{2}$", date):
-        day = get_day_of_week(date)  # Получаем день недели
+        day_name = get_day_of_week(date)  # Получаем день недели и проверяем корректность даты
+        if "Некорректная дата" in day_name:  # Проверяем, если функция вернула сообщение об ошибке
+            bot.send_message(chat_id, day_name)  # Отправляем сообщение об ошибке
+            bot.send_message(chat_id, "Пожалуйста, введите дату в формате ДД.ММ:")
+            bot.register_next_step_handler(message, get_date)  # Запрашиваем дату снова
+            return
+        
         year = datetime.date.today().year  # Получаем текущий год
         
         if chat_id in poll_data:
-            poll_data[chat_id].append({'date': date, 'day': day, 'year': year})  # Сохраняем дату, день и год
+            poll_data[chat_id].append({'date': date, 'day': day_name, 'year': year, 'created_at': datetime.datetime.now().isoformat()})  # Сохраняем дату, день и год
             save_polls()  # Сохраняем изменения
         bot.send_message(chat_id, "Введите время тренировки в формате ЧЧ-ММ (например, 12-00):")
         bot.register_next_step_handler(message, get_time)
