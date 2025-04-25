@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 import json
 import os
+from admin import is_admin
 
 data = ""
 with open('config.json', 'r') as file:
@@ -13,6 +14,12 @@ bot = telebot.TeleBot(TOKEN)
 # Словарь для хранения ID пользователей (можно заменить на базу данных)
 users = {} # {user_id: username} - пример структуры
 
+
+# @bot.message_handler(commands=['start'])
+# def create_poll_command(message):
+#     if is_admin(message):
+#         bot.send_message(message.chat.id, "Выберите команду /create_poll для создания опроса")
+        
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -30,7 +37,7 @@ def start(message):
     ]
     bot.set_my_commands(commands=default_commands, scope=telebot.types.BotCommandScopeChat(chat_id=message.chat.id))
 
-    bot.reply_to(message, f"Привет, {first_name}! Для голосования за тренировки нажми команду /voting")
+    bot.send_message(message.chat.id, f"Привет, {first_name}! Для голосования за тренировки нажми команду /voting")
 
 @bot.message_handler(commands=['status'])
 def status(message):
