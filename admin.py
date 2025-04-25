@@ -42,16 +42,9 @@ def is_admin(message):
 
 
 def set_commands():
-    # ВСЕ ПОЛЬЗОВАТЕЛИ
-    default_commands = [
-        telebot.types.BotCommand("start", "Начать работу с ботом"),
-        telebot.types.BotCommand("status", "Проверить свой статус оплаты"),
-        telebot.types.BotCommand("help", "Получить справку")
-    ]
-    bot.set_my_commands(commands=default_commands)
     # ТОЛЬКО АДМИН
     for admin_id in ADMIN_ID:
-        admin_scope = telebot.types.BotCommandScopeChat(chat_id=admin_id)  # Измените здесь
+        admin_scope = telebot.types.BotCommandScopeChat(chat_id=admin_id)  
         admin_commands = [
             telebot.types.BotCommand("create_poll", "Создать опрос"),
             telebot.types.BotCommand("check_payments", "Проверить статусы оплат"),
@@ -64,8 +57,7 @@ def set_commands():
 @bot.message_handler(commands=['start'])
 def create_poll_command(message):
     if is_admin(message):
-        chat_id = message.chat.id
-        bot.send_message(chat_id, "Выберите команду /create_poll для создания опроса")
+        bot.send_message(message.chat.id, "Выберите команду /create_poll для создания опроса")
 
 
 @bot.message_handler(commands=['create_poll'])
@@ -79,7 +71,7 @@ def create_poll_command(message):
         # Очищаем предыдущие опросы для данного администратора
         poll_data[chat_id].clear()  # Удаляем старые опросы, если есть
 
-        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 21.04):")
+        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(message, get_date)  # Запрашиваем дату сразу
     else:
         bot.send_message(message.chat.id, "У вас нет прав для создания опросов.")
@@ -254,7 +246,7 @@ def callback_query(call):
         bot.send_message(chat_id, "Начинаем пересоздание опроса...")
         poll_data[chat_id].clear()
         save_polls()  # Сохраняем изменения после очистки
-        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 21.04):")
+        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(call.message, get_date)
 
 def handle_qr_code(message):
@@ -280,7 +272,7 @@ def next_action(message):
 
     if is_admin(message):
         if action == "Добавить еще вариант":
-            bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 27.03):",
+            bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):",
                              reply_markup=types.ReplyKeyboardRemove())
             bot.register_next_step_handler(message, get_date)
         elif action == "Создать опрос":
@@ -317,6 +309,7 @@ def handle_poll_answer(poll_answer):
             poll_results[poll_id][i] = 0
         if i not in poll_results_copy or poll_results_copy[i] == 0:
             poll_results[poll_id][i] += 1
+            
 
 if __name__ == "__main__":
     print("Bot started!")
