@@ -2,7 +2,7 @@ import telebot
 from telebot import types
 import json
 import os
-from admin import is_admin
+from admin import is_admin, get_latest_poll  # Импортируем функцию для получения последнего опроса
 
 data = ""
 with open('config.json', 'r') as file:
@@ -12,14 +12,8 @@ TOKEN = data.get("token")
 bot = telebot.TeleBot(TOKEN)
 
 # Словарь для хранения ID пользователей (можно заменить на базу данных)
-users = {} # {user_id: username} - пример структуры
+users = {}  # {user_id: username} - пример структуры
 
-
-# @bot.message_handler(commands=['start'])
-# def create_poll_command(message):
-#     if is_admin(message):
-#         bot.send_message(message.chat.id, "Выберите команду /create_poll для создания опроса")
-        
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -42,13 +36,9 @@ def start(message):
 @bot.message_handler(commands=['status'])
 def status(message):
     user_id = message.from_user.id
-    # Проверяем, есть ли ID пользователя в нашем словаре (или базе данных)
     if user_id in users:
         print(f"Запрос статуса от пользователя: {user_id}")
-        # Здесь нужно реализовать логику проверки статуса оплаты пользователя.
-        # Это может включать запрос к базе данных, API оплаты и т.д.
         try:
-            # Замените на вашу логику
             payment_status = "Оплачено"  # Пример
             bot.reply_to(message, f"Ваш статус оплаты: {payment_status}")
         except Exception as e:
@@ -69,24 +59,20 @@ def help(message):
 
 @bot.message_handler(commands=['voting'])
 def send_latest_poll(message):
-    latest_poll = {
-        "date": "06.06",
-        "day": "Пятница",
-        "year": 2025,
-        "time": "14-00",
-        'training_type': "Игровая",
-        'location': "Энергия",
-        'price': 500,
-        "comment": "Для GD-free"
-    }  # Пример опроса
+    latest_poll = get_latest_poll()  # Получаем самый свежий опрос
 
     if latest_poll:
+        poll_id, poll_options = list(latest_poll.items())[0]  # Получаем ID и все варианты опроса
         question = "Волейбол - выберите подходящий вариант:"
-        options = [
-            f"{latest_poll['date']} ({latest_poll['day']}) {latest_poll['time']} - {latest_poll['training_type']} ({latest_poll['location']}, {latest_poll['price']} руб.) {latest_poll['comment']}",
-            "Не пойду на волейбол"  # Добавляем второй вариант
-        ]
-        bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False)
+        
+        options = []
+        for option in poll_options:
+            options.append(f"{option['date']} ({option['day']}) {option['time']} - {option['training_type']} ({option['location']}, {option['price']} руб.) {option['comment']}")
+        
+        options.append("Не пойду на волейбол")  # Добавляем вариант по умолчанию
+
+        # Убедитесь, что здесь также установлен allows_multiple_answers=True
+        bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
     else:
         bot.send_message(message.chat.id, "Нет доступных опросов.")
 
@@ -98,3 +84,7 @@ def handle_poll_answer(poll_answer):
 
     # Здесь можно обработать результаты голосования, если это необходимо
     print(f"Пользователь {user_id} проголосовал в опросе {poll_id} с вариантами {option_ids}")
+
+if __name__ == "__main__":
+    print("User bot started!")
+    bot.polling()

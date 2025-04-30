@@ -18,6 +18,7 @@ bot = telebot.TeleBot(TOKEN)
 ADMIN_ID = [494635818]
 poll_data = {}
 poll_results = {}
+letest_poll = {}
 
 POLL_DATA_FILE = "polls.json"
 QR_CODE_DIR = "qr_codes"
@@ -203,12 +204,11 @@ def create_and_send_poll(message, poll_id):
             comment = option.get('comment', '')
             options.append(f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}")
 
-        options.append("Не пойду на волейбол")
+        options.append("Не пойду на волейбол")  # Добавляем вариант по умолчанию
         question = "Волейбол - выберите подходящий вариант:"
 
         try:
-            sent_poll = bot.send_poll(chat_id, question=question, options=options, is_anonymous=False,
-                                        allows_multiple_answers=True)
+            sent_poll = bot.send_poll(chat_id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)  # Разрешаем голосовать за несколько вариантов
 
             poll_id_sent = sent_poll.poll.id
             poll_results[poll_id_sent] = {i: 0 for i in range(len(options))}
@@ -279,7 +279,7 @@ def next_action(message, poll_id):
 
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):
-    chat_id = poll_answer.user.id
+    user_id = poll_answer.user.id
     poll_id = poll_answer.poll_id
     option_ids = poll_answer.option_ids
 
@@ -289,18 +289,43 @@ def handle_poll_answer(poll_answer):
         print(f"WARNING: poll_id {poll_id} not found in poll_results")
         return
 
-    poll_results_copy = poll_results[poll_id].copy()
-
-    for i in poll_results_copy:
-        if i not in option_ids and poll_results_copy[i] > 0:
-            poll_results[poll_id][i] -= 1
-
     for i in option_ids:
-        if i not in poll_results_copy:
+        if i not in poll_results[poll_id]:
             poll_results[poll_id][i] = 0
-        if i not in poll_results_copy or poll_results_copy[i] == 0:
-            poll_results[poll_id][i] += 1
+        poll_results[poll_id][i] += 1  
             
+def get_latest_poll():
+    loaded_polls = load_polls()
+    
+    latest_poll = None
+    latest_created_at = None
+
+    for poll_id, poll in loaded_polls.items():
+        if poll and 'created_at' in poll[-1]:  # Проверяем, что есть хотя бы один опрос
+            created_at = poll[-1]['created_at']
+            if latest_created_at is None or created_at > latest_created_at:
+                latest_created_at = created_at
+                latest_poll = {poll_id: poll}  # Сохраняем весь список опросов
+
+    return latest_poll
+
+@bot.message_handler(commands=['voting'])
+def send_latest_poll(message):
+    latest_poll = get_latest_poll()  
+
+    if latest_poll:
+        poll_id, poll_options = list(latest_poll.items())[0]  # Получаем ID и все варианты опроса
+        question = "Волейбол - выберите подходящий вариант:"
+        
+        options = []
+        for option in poll_options:  # poll_options теперь список опросов
+            options.append(f"{option['date']} ({option['day']}) {option['time']} - {option['training_type']} ({option['location']}, {option['price']} руб.) {option['comment']}")
+        
+        options.append("Не пойду на волейбол")  # Добавляем вариант по умолчанию
+
+        bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
+    else:
+        bot.send_message(message.chat.id, "Нет доступных опросов.")
 
 if __name__ == "__main__":
     print("Bot started!")
