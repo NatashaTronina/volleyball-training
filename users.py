@@ -98,7 +98,3 @@ def handle_poll_answer(poll_answer):
 
     # Здесь можно обработать результаты голосования, если это необходимо
     print(f"Пользователь {user_id} проголосовал в опросе {poll_id} с вариантами {option_ids}")
-
-if __name__ == "__main__":
-    print("Bot started!")
-    bot.polling()
