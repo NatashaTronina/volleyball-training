@@ -59,6 +59,7 @@ def help(message):
 
 @bot.message_handler(commands=['voting'])
 def send_latest_poll(message):
+    chat_id = message.chat.id
     latest_poll = get_latest_poll()  # Получаем самый свежий опрос
 
     if latest_poll:
@@ -71,7 +72,7 @@ def send_latest_poll(message):
         
         options.append("Не пойду на волейбол")  # Добавляем вариант по умолчанию
 
-        # Убедитесь, что здесь также установлен allows_multiple_answers=True
+        # Отправляем опрос
         bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
     else:
         bot.send_message(message.chat.id, "Нет доступных опросов.")
@@ -82,9 +83,43 @@ def handle_poll_answer(poll_answer):
     poll_id = poll_answer.poll_id
     option_ids = poll_answer.option_ids
 
-    # Здесь можно обработать результаты голосования, если это необходимо
-    print(f"Пользователь {user_id} проголосовал в опросе {poll_id} с вариантами {option_ids}")
+    # Получаем последний опрос
+    latest_poll = get_latest_poll()
+    total_price = 0  # Сбрасываем total_price для каждого нового голосования
+    has_paid_option = False  # Флаг для отслеживания, выбрана ли платная опция
 
+    # Получаем варианты опроса
+    if latest_poll:
+        poll_options = list(latest_poll.values())[0]  # Получаем варианты опроса
+
+        # Проверяем, выбрал ли пользователь вариант "Не пойду на волейбол"
+        for index in option_ids:
+            if index < len(poll_options):  # Проверяем, что индекс в пределах допустимого диапазона
+                # Проверяем, не является ли выбранный вариант последним (не пойду на волейбол)
+                if index == len(poll_options):  # Предполагаем, что последний вариант - "Не пойду на волейбол"
+                    continue  # Пропускаем этот вариант
+                price = poll_options[index]['price']  # Получаем цену по индексу
+                total_price += price  # Суммируем стоимость
+                has_paid_option = True  # Устанавливаем флаг, если выбрана платная опция
+
+            menu = telebot.types.InlineKeyboardMarkup()
+            menu.add(types.InlineKeyboardButton("Подтвердить", callback_data=f"confirm_{poll_id}_{total_price}"))
+            bot.send_message(user_id, "Вы подтверждаете свои ответы?", reply_markup=menu)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("confirm_"))
+def confirm_answers(call):
+    user_id = call.from_user.id
+    poll_data = call.data.split("_")
+    poll_id = poll_data[1]
+    total_price = poll_data[2]  # Получаем общую сумму из callback_data
+
+    bot.answer_callback_query(call.id) 
+
+    # Проверяем, если сумма 0, отправляем соответствующее сообщение
+    if total_price == "0":
+        bot.send_message(call.message.chat.id, "Ваши ответы подтверждены. Спасибо!")
+    else:
+        bot.send_message(call.message.chat.id, f"Ваши ответы подтверждены. <b>Общая сумма: {total_price} руб.</b> Спасибо!", parse_mode='HTML')
 if __name__ == "__main__":
     print("User bot started!")
     bot.polling()
