@@ -5,8 +5,9 @@ import json
 import os
 import datetime
 import uuid
-import qrcode
 from DATE import get_day_of_week
+import qrcode
+from io import BytesIO
 
 data = ""
 with open('config.json', 'r') as file:
@@ -52,44 +53,6 @@ def set_commands():
             telebot.types.BotCommand("confirm_list", "Подтвердить список")
         ]
         bot.set_my_commands(commands=admin_commands, scope=admin_scope)
-    user_scope = telebot.types.BotCommandScopeAllPrivateChats()
-    user_commands = [
-        telebot.types.BotCommand("start", "Начать"),
-        telebot.types.BotCommand("get_qr", "Получить QR-код для оплаты"),
-        telebot.types.BotCommand("voting", "Участвовать в опросе")
-    ]
-    bot.set_my_commands(commands=user_commands, scope=user_scope)
-
-def generate_qr_code(poll_id, user_id):
-    if not poll_id:
-        print("Poll ID is missing.")
-        return None
-
-    payment_link = None
-    if poll_id in poll_data:
-        for option in poll_data[poll_id]:
-            if 'payment_link' in option:
-                payment_link = option['payment_link']
-                break
-
-    if not payment_link:
-        print("Payment link is missing.")
-        return None
-
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(payment_link)
-    qr.make(fit=True)
-
-    img = qr.make_image(fill_color="black", back_color="white")
-    qr_code_path = os.path.join(QR_CODE_DIR, f"qr_code_{poll_id}_{user_id}.png")
-    img.save(qr_code_path)
-
-    return qr_code_path
 
 @bot.message_handler(commands=['start'])
 def start_command(message):
@@ -107,6 +70,7 @@ def create_poll_command(message):
         chat_id = message.chat.id
         poll_id = str(uuid.uuid4())  # Генерируем уникальный идентификатор для опроса
         letest_poll["id"] = poll_id
+        print(f"/create_poll: Создан poll_id: {poll_id}")  # Добавлено
         poll_data[poll_id] = []  # Инициализируем новый опрос с уникальным ID
 
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
@@ -149,7 +113,7 @@ def get_time(message, poll_id):
         bot.send_message(message.chat.id, "Выберите тип тренировки:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_training_type, poll_id)
     else:
-        bot.send_message(message.chat.id, "Неверный формат времени. Пожалуйста, введите время в формате ЧЧ-ММ (например, 12-00):")
+        bot.send_message(chat_id, "Неверный формат времени. Пожалуйста, введите время в формате ЧЧ-ММ (например, 12-00):")
         bot.register_next_step_handler(message, get_time, poll_id)
 
 def get_training_type(message, poll_id):
@@ -235,19 +199,42 @@ def get_comment(message, poll_id):
     bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
     bot.register_next_step_handler(message, next_action, poll_id)
 
-def create_and_send_poll(message, poll_id):
+def next_action(message, poll_id):
+    action = message.text
     chat_id = message.chat.id
+    print(f"next_action: poll_id: {poll_id}")  # Добавлено
+
+    if action == "Создать опрос":
+        bot.send_message(chat_id, "Пожалуйста, отправьте ссылку на оплату СБП:")
+        bot.register_next_step_handler(message, save_sbp_link_to_all, poll_id)
+    elif action == "Добавить еще вариант":
+        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
+        bot.register_next_step_handler(message, get_date, poll_id)
+    else:
+        bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных")
+
+def create_and_send_poll(call, poll_id):
+    print(f"create_and_send_poll: poll_id: {poll_id}") # Добавлено
+
+    chat_id = call.message.chat.id
     options = []
     if poll_id in poll_data:
         for option in poll_data[poll_id]:
             date = option.get('date', 'Не указана')
             day = option.get('day', 'Не указан')
             time = option.get('time', 'Не указано')
-            training_type = option.get('training_type', 'Не указан')
+            training_type = option.get('training_type', 'Не указана')
             price = option.get('price', 'Не указана')
-            location = option.get('location', 'Не указано')
+            location = option.get('location', 'Не указана')
             comment = option.get('comment', '')
-            options.append(f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}")
+            payment_link = option.get('payment_link', '')  # Get the payment link
+
+            #Create a shortened string
+            option_string = f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}"
+
+            if len(option_string) > 90: #Truncate if too long
+                option_string = option_string[:87] + "..." #Truncate and add ellipsis
+            options.append(option_string)  # Add payment link to each option
 
         options.append("Не пойду на волейбол")  # Добавляем вариант по умолчанию
         question = "Волейбол - выберите подходящий вариант:"
@@ -275,12 +262,11 @@ def callback_query(call):
     chat_id = call.message.chat.id
     callback_data = call.data
 
-    # Извлекаем poll_id из callback_data
-    poll_id = callback_data.split('_')[1]  # Предполагаем, что poll_id находится на втором месте
+    # Правильно извлекаем poll_id из callback_data
+    poll_id = callback_data.split('_')[2]  # Правильный индекс: poll_correct_pollID - pollID будет на позиции 2
 
     if callback_data.startswith('poll_correct'):
-        bot.send_message(chat_id, "Отлично! Теперь отправьте QR-код для оплаты тренировок (как изображение).")
-        bot.register_next_step_handler(call.message, handle_qr_code, poll_id)  # Передаем poll_id
+        bot.send_message(chat_id, "Опрос подтвержден и отправлен пользователям!")
 
     elif callback_data.startswith('poll_edit'):
         bot.send_message(chat_id, "Начинаем пересоздание опроса...")
@@ -288,72 +274,29 @@ def callback_query(call):
             poll_data[poll_id].clear()  # Очищаем данные для текущего опроса
             save_polls()
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
-        bot.register_next_step_handler(call.message, get_date, poll_id)  # Передаем poll_id
+        bot.register_next_step_handler(call.message, get_date, poll_id)
 
-def handle_qr_code(message, poll_id):  # Добавляем poll_id как аргумент
+def save_sbp_link_to_all(message, poll_id):
+    print(f"save_sbp_link_to_all: poll_id: {poll_id}") # Добавлено
+
+    sbp_link = message.text.strip()
     chat_id = message.chat.id
 
-    if message.photo:
-        file_info = bot.get_file(message.photo[-1].file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-
-        qr_code_path = os.path.join(QR_CODE_DIR, f"qr_code_{chat_id}.png")
-        with open(qr_code_path, 'wb') as new_file:
-            new_file.write(downloaded_file)
-
-        bot.send_message(chat_id, "QR-код сохранен. Теперь введите ссылку на СБП:")
-        bot.register_next_step_handler(message, get_sbp_link, qr_code_path, poll_id)  # Передаем poll_id
-    else:
-        bot.send_message(chat_id, "Пожалуйста, отправьте QR-код как *изображение*.", parse_mode="Markdown")
-
-def get_sbp_link(message, qr_code_path, poll_id):  # Добавляем poll_id как аргумент
-    sbp_link = message.text
-    chat_id = message.chat.id
-
-    # Сохраняем ссылку на оплату в данных опроса
     if poll_id in poll_data:
-        poll_data[poll_id][-1]['payment_link'] = sbp_link  # Сохраняем ссылку на оплату
-        save_polls()  # Сохраняем изменения в файл
+        # Check if the poll ID exists
+        for item in poll_data[poll_id]:  # Iterate through all polls for the given id
+            item['payment_link'] = sbp_link
 
-    # Создаем инлайн клавиатуру с кнопкой ссылки на СБП
-    keyboard = types.InlineKeyboardMarkup()
-    button = types.InlineKeyboardButton(text="Оплатить через СБП", url=sbp_link)
-    keyboard.add(button)
+        save_polls()
+        bot.send_message(chat_id, "Ссылка на СБП сохранена. Отправляю опрос")
 
-    with open(qr_code_path, 'rb') as qr_code_file:
-        bot.send_photo(chat_id, qr_code_file, reply_markup=keyboard)
+        # Create a mock 'call' object
+        call = types.CallbackQuery(id='0', from_user=message.from_user, data=f'poll_correct_{poll_id}', message=message, chat_instance='', json_string=None) #id and from_user need to be valid, message will be the current message
 
-    bot.send_message(chat_id, "QR-код и ссылка на СБП отправлены.")
+        create_and_send_poll(call, poll_id) #Correct call
 
-def delete_old_qr_codes(user_id):
-    for filename in os.listdir(QR_CODE_DIR):
-        if filename.startswith(f"qr_code_{user_id}_"):
-            file_path = os.path.join(QR_CODE_DIR, filename)
-            try:
-                os.remove(file_path)
-                print(f"Deleted old QR code: {filename}")
-            except Exception as e:
-                print(f"Error deleting {filename}: {e}")
-
-
-@bot.message_handler(func=lambda message: True)
-def next_action(message, poll_id):
-    action = message.text
-    chat_id = message.chat.id
-    if is_admin(message):
-        if action == "Добавить еще вариант":
-            bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):",
-                             reply_markup=types.ReplyKeyboardRemove())
-            bot.register_next_step_handler(message, get_date, poll_id)
-        elif action == "Создать опрос":
-            create_and_send_poll(message, poll_id)
-        else:
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
-            bot.send_message(chat_id, "Пожалуйста, выберите из предложенных вариантов:", reply_markup=keyboard)
-            bot.register_next_step_handler(message, next_action, poll_id)
     else:
-        bot.send_message(chat_id, "У вас нет прав для выполнения этой команды.")
+        bot.send_message(chat_id, "Ошибка: Не найден опрос. Пожалуйста, начните сначала.")
 
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):
@@ -367,66 +310,44 @@ def handle_poll_answer(poll_answer):
         poll_results[user_id] = {'voted': True, 'poll_id': poll_id}
         print(f"WARNING: poll_id {poll_id} not found in poll_results")
         return
-    
+
     if user_id not in poll_results:
           poll_results[user_id] = {'voted': True, 'poll_id': poll_id}
-   
+
     poll_results[user_id]['voted'] = True
     for i in option_ids:
         if i not in poll_results[poll_id]:
             poll_results[poll_id][i] = 0
         poll_results[poll_id][i] += 1
-            
+
 def get_latest_poll():
     loaded_polls = load_polls()
-    
+    print(f"Loaded polls: {loaded_polls}") #Add this
     latest_poll = None
     latest_created_at = None
+    latest_poll_id = None #Added this
 
-    for poll_id, poll in loaded_polls.items():
-        if poll and 'created_at' in poll[-1]:  # Проверяем, что есть хотя бы один опрос
-            created_at = poll[-1]['created_at']
-            if latest_created_at is None or created_at > latest_created_at:
-                latest_created_at = created_at
-                latest_poll = {poll_id: poll}  # Сохраняем весь список опросов
+    for poll_id, poll_list in loaded_polls.items():
+        if poll_list and isinstance(poll_list, list) and len(poll_list) > 0:
+            for poll_item in poll_list:
+                try:
+                    created_at_str = poll_item.get('created_at')
+                    created_at = datetime.datetime.fromisoformat(created_at_str)
+                except (KeyError, ValueError, TypeError):
+                    continue
 
-    return latest_poll
+                if latest_created_at is None or created_at > latest_created_at:
+                    latest_created_at = created_at
+                    latest_poll = poll_item #It should work
+                    latest_poll_id  = poll_id  #Save it
 
-@bot.message_handler(commands=['voting'])
-def send_latest_poll(message):
-    latest_poll = get_latest_poll()
-    if latest_poll:
-        poll_id, poll_options = list(latest_poll.items())[0]  # Получаем ID и все варианты опроса
-        question = "Волейбол - выберите подходящий вариант:"
+    if latest_poll: #Then you return as a dict.
+        print(f"Returning latest poll: {{'{latest_poll_id}': [{latest_poll}]}}") # Add this
+        return {latest_poll_id: [latest_poll]} #Return as dict
+    print("Returning None") # Add this
+    return None
 
-        options = []
-        for option in poll_options:  # poll_options теперь список опросов
-            options.append(f"{option['date']} ({option['day']}) {option['time']} - {option['training_type']} ({option['location']}, {option['price']} руб.) {option['comment']}")
-
-        options.append("Не пойду на волейбол")  # Добавляем вариант по умолчанию
-
-        bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
-    else:
-        bot.send_message(message.chat.id, "Нет доступных опросов.")
-@bot.message_handler(commands=['get_qr'])
-def get_qr_command(message):
-    user_id = message.from_user.id
-
-    if user_id in poll_results and poll_results[user_id]['voted']:
-        poll_id = letest_poll.get("id")  # Получаем ID последнего опроса
-        delete_old_qr_codes(user_id)
-        qr_code_path = generate_qr_code(poll_id, user_id)
-        if qr_code_path:
-            try:
-                with open(qr_code_path, 'rb') as qr_code_file:
-                    bot.send_photo(message.chat.id, qr_code_file, caption="Оплатите тренировку")
-            except Exception as e:
-                bot.send_message(message.chat.id, f"Произошла ошибка при отправке QR-кода: {e}")
-        else:
-            bot.send_message(message.chat.id, "Не удалось сгенерировать QR-код. Обратитесь к администратору.")
-    else:
-        bot.send_message(message.chat.id, "Пожалуйста, сначала проголосуйте в опросе.")
 if __name__ == "__main__":
     print("Admin bot started")
     set_commands()
-    bot.infinity_polling()
+    bot.polling()
