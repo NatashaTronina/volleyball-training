@@ -1,12 +1,7 @@
-# user.py (Revised)
-
 import telebot
 from telebot import types
 import json
-import os
-from admin import is_admin, get_latest_poll  # Import admin bot
-# from admin import bot as admin_bot  # Not needed, as we don't send the QR code from here
-import qrcode
+from admin import is_admin, get_latest_poll  # Импортируем из админского кода нужные функции
 
 data = ""
 with open('config.json', 'r') as file:
@@ -16,8 +11,8 @@ TOKEN = data.get("token")
 bot = telebot.TeleBot(TOKEN)
 
 users = {}  # {user_id: username}
-user_confirmed = {}  # Track if a user has confirmed for a poll
-
+user_confirmed = {}  # Хранит, подтверждал ли пользователь свой голос
+message_ids = {}  # Для хранения message_ids, ключ - user_id, значение - словарь с keys "poll" и "confirm"
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -34,6 +29,7 @@ def start(message):
         telebot.types.BotCommand("help", "Получить справку"),
         telebot.types.BotCommand("get_qr", "Получить QR-код для оплаты"),
     ]
+    # Устанавливаем команды только для данного пользователя в приватном чате
     bot.set_my_commands(commands=default_commands, scope=telebot.types.BotCommandScopeChat(chat_id=message.chat.id))
 
     bot.send_message(message.chat.id, f"Привет, {first_name}! Для голосования за тренировки нажми команду /voting")
@@ -45,7 +41,7 @@ def status(message):
     if user_id in users:
         print(f"Запрос статуса от пользователя: {user_id}")
         try:
-            payment_status = "Оплачено"  # Example
+            payment_status = "Оплачено"  # Пример, здесь должна быть реальная логика проверки
             bot.reply_to(message, f"Ваш статус оплаты: {payment_status}")
         except Exception as e:
             bot.reply_to(message, f"Ошибка при проверке статуса оплаты: {e}")
@@ -54,15 +50,15 @@ def status(message):
 
 
 @bot.message_handler(commands=['help'])
-def help(message):
+def help_command(message):
     help_text = """
-    Список команд:
-    /start - начало работы с ботом
-    /status - проверка своего статуса оплаты
-    /voting - голосование за тренировки
-    /help - получение справки
-    /get_qr - Получить QR-код после голосования
-    """
+Список команд:
+/start - начало работы с ботом
+/status - проверка своего статуса оплаты
+/voting - голосование за тренировки
+/help - получение справки
+/get_qr - Получить QR-код после голосования
+"""
     bot.reply_to(message, help_text)
 
 
@@ -82,21 +78,23 @@ def send_latest_poll(message):
                 day = option.get('day', 'Не указан')
                 time = option.get('time', 'Не указано')
                 training_type = option.get('training_type', 'Не указан')
-                price = option.get('price', 'Не указана')
+                price = option.get('price', 0)
                 location = option.get('location', 'Не указано')
                 comment = option.get('comment', '')
                 options.append(f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}")
 
         options.append("Не пойду на волейбол")
-        # Send poll and store the poll id
+
         try:
-           sent_poll = bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
-           user_confirmed[message.from_user.id] = False  # Reset confirmation status
+            sent_poll = bot.send_poll(chat_id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
+            user_confirmed[message.from_user.id] = False  # Сбрасываем статус подтверждения
+            # Сохраняем message_id опроса
+            message_ids[message.from_user.id] = message_ids.get(message.from_user.id, {})
+            message_ids[message.from_user.id]["poll"] = sent_poll.message_id
         except Exception as e:
             bot.send_message(chat_id, f"Не удалось создать опрос: {e}")
-
     else:
-        bot.send_message(message.chat.id, "Нет доступных опросов.")
+        bot.send_message(chat_id, "Нет доступных опросов.")
 
 
 @bot.poll_answer_handler()
@@ -104,45 +102,71 @@ def handle_poll_answer(poll_answer):
     user_id = poll_answer.user.id
     poll_id = poll_answer.poll_id
     option_ids = poll_answer.option_ids
-    chat_id = poll_answer.user.id
+    chat_id = user_id  # Личные сообщения
 
     latest_poll = get_latest_poll()
     total_price = 0
-    has_paid_option = False
 
     if latest_poll:
-        poll_id, poll_options = list(latest_poll.items())[0]
-        #Correct handling
+        poll_id_data, poll_options = list(latest_poll.items())[0]
 
         if isinstance(poll_options, list) and len(poll_options) > 0:
-            # Correct handling
             for index in option_ids:
                 if index < len(poll_options):
-                    if isinstance(poll_options[index], dict):
-                        price = poll_options[index].get('price', 0)
+                    option = poll_options[index]
+                    if isinstance(option, dict):
+                        price = option.get('price', 0)
                         total_price += price
 
-        #Check for the existing status
+        # Проверяем, показывался ли уже запрос подтверждения
         if not user_confirmed.get(user_id, False):
             menu = telebot.types.InlineKeyboardMarkup()
-            menu.add(types.InlineKeyboardButton("Подтвердить", callback_data=f"confirm_{poll_id}_{total_price}"))
-            bot.send_message(chat_id, f"Вы подтверждаете свои ответы?", reply_markup=menu)
-            user_confirmed[user_id] = True  # Mark as shown
+            menu.add(types.InlineKeyboardButton("Подтвердить", callback_data=f"confirm_{poll_id_data}_{total_price}"))
+            # Отправляем кнопку подтверждения
+            confirmation_message = bot.send_message(chat_id, f"Вы подтверждаете свои ответы?", reply_markup=menu)
+            user_confirmed[user_id] = True  # Отмечаем, что подтверждение показано
+            # Сохраняем message_id подтверждения
+            message_ids[user_id] = message_ids.get(user_id, {})
+            message_ids[user_id]["confirm"] = confirmation_message.message_id
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("confirm_"))
 def confirm_answers(call):
     user_id = call.from_user.id
-    poll_data = call.data.split("_")
-    poll_id = poll_data[1]
-    total_price = poll_data[2]
+    data = call.data.split("_")
+    if len(data) < 3:
+        bot.answer_callback_query(call.id, "Неверные данные для подтверждения.")
+        return
+
+    poll_id = data[1]
+    total_price = data[2]
+    chat_id = call.message.chat.id
+
     bot.answer_callback_query(call.id)
 
+    # Удаляем сообщения подтверждения и опроса, если они есть
+    msgs = message_ids.get(user_id, {})
+    if "confirm" in msgs:
+        try:
+            bot.delete_message(chat_id, msgs["confirm"])
+        except Exception as e:
+            print(f"Ошибка удаления сообщения подтверждения: {e}")
+    if "poll" in msgs:
+        try:
+            bot.delete_message(chat_id, msgs["poll"])
+        except Exception as e:
+            print(f"Ошибка удаления сообщения с опросом: {e}")
+
+    # Удаляем из словаря id удаленных сообщений
+    message_ids.pop(user_id, None)
+
     if total_price == "0":
-        bot.send_message(call.message.chat.id, "Ваши ответы подтверждены. Спасибо!")
+        bot.send_message(chat_id, "Ваши ответы подтверждены. Спасибо!")
     else:
-        bot.send_message(call.message.chat.id, f"Ваши ответы подтверждены. <b>Общая сумма: {total_price} руб.</b> Спасибо!", parse_mode='HTML')
+        bot.send_message(chat_id, f"Ваши ответы подтверждены. <b>Общая сумма: {total_price} руб.</b> Спасибо!", parse_mode='HTML')
+
 
 if __name__ == "__main__":
     print("User bot started!")
     bot.polling()
+
