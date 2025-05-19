@@ -338,12 +338,12 @@ def get_latest_poll():
 
                 if latest_created_at is None or created_at > latest_created_at:
                     latest_created_at = created_at
-                    latest_poll = poll_item #It should work
+                    latest_poll = poll_list #It should work
                     latest_poll_id  = poll_id  #Save it
 
     if latest_poll: #Then you return as a dict.
         print(f"Returning latest poll: {{'{latest_poll_id}': [{latest_poll}]}}") # Add this
-        return {latest_poll_id: [latest_poll]} #Return as dict
+        return {latest_poll_id: latest_poll} #Return as dict
     print("Returning None") # Add this
     return None
 
