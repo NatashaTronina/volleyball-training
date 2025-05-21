@@ -239,6 +239,7 @@ def create_and_send_poll(bot, call, poll_id):
         bot.send_message(chat_id, "Нет данных для создания опроса.")
 
 def handle_callback_query(bot, call):
+    print(f"admin.handle_callback_query: call.data = {call.data}") # Добавили
     if call.data.startswith('poll_correct'):
         callback_query(bot, call)
     elif call.data.startswith('poll_edit'):
@@ -328,24 +329,43 @@ def get_latest_poll():
     print("Returning None") # Add this
     return None
 def check_payments(bot, message):
-    print(f"check_payments: Command received. Current awaiting_confirmation: {awaiting_confirmation}")
+    print(
+        f"check_payments: Command received. Current awaiting_confirmation: {awaiting_confirmation}"
+    )
     if is_admin(message):
+        # Send initial message and store its ID.
+        initial_message = bot.send_message(message.chat.id, "Список ожидающих подтверждения оплат:", parse_mode="Markdown")
+        initial_message_id = initial_message.message_id
+
         if awaiting_confirmation:
-            payment_list = "Список ожидающих подтверждения оплат:\n"
             for user_id, payment_info in awaiting_confirmation.items():
                 username = payment_info["username"]
                 total_price = payment_info["total_price"]
-                payment_list += f"@{username} - Сумма: {total_price}\n"
+
+                # Form the message with user info
+                admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
+
                 # Add admin confirmation button for each user
                 keyboard = types.InlineKeyboardMarkup()
-                confirm_button = types.InlineKeyboardButton(text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}")
+                confirm_button = types.InlineKeyboardButton(
+                    text="Подтвердить оплату",
+                    callback_data=f"admin_confirm_{user_id}_{total_price}",
+                )
                 keyboard.add(confirm_button)
-                bot.send_message(message.chat.id, payment_list, reply_markup=keyboard)  # Send the information with the button
-                payment_list = " " # чтобы кнопка выводилась под каждым пользователем, а не в самом конце
+                bot.send_message(
+                    message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown"
+                )  # Send the information with the button
         else:
-            bot.send_message(message.chat.id, "Нет ожидающих подтверждения оплат.")
+            # Edit the message to indicate an empty list.
+            try:
+                bot.edit_message_text(chat_id=message.chat.id, message_id=initial_message_id, text="Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
+            except Exception as e:
+                print(f"Ошибка редактирования сообщения: {e}")
     else:
-        bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
+        bot.send_message(
+            message.chat.id, "У вас нет прав для просмотра этой информации."
+        )
+
 
 def admin_confirm_payment(bot, call):
     admin_id = call.from_user.id
@@ -383,6 +403,7 @@ def handle_callback_query(bot, call):
         confirm_payment(bot, call)
 
 def confirm_payment(bot, call):
+    print("confirm_payment: Функция вызвана!")
     user_id = call.from_user.id
     chat_id = call.message.chat.id
     total_price = call.data.split("_")[-1]
@@ -399,7 +420,9 @@ def confirm_payment(bot, call):
 
         del awaiting_confirmation[user_id]
 
-        admin_message = f"@{username} подтвердил оплату на сумму {total_price}"
+        # Формируем сообщение с кликабельным именем пользователя
+        admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
+
         keyboard = types.InlineKeyboardMarkup()
         confirm_button = types.InlineKeyboardButton(
             text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}"
@@ -407,7 +430,7 @@ def confirm_payment(bot, call):
         keyboard.add(confirm_button)
 
         for admin_id in ADMIN_ID:
-            bot.send_message(admin_id, admin_message, reply_markup=keyboard)
+            bot.send_message(admin_id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
     else:
         bot.send_message(chat_id, "Ошибка: Запрос на подтверждение не найден.")
         bot.answer_callback_query(call.id, "Произошла ошибка.")

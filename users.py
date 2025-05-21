@@ -147,7 +147,7 @@ def handle_poll_answer(bot, poll_answer):
                     text="Да", callback_data=f"confirm_{poll_id_data}_{total_price}"
                 )
                 confirm_no_button = telebot.types.InlineKeyboardButton(
-                    text="Нет", callback_data=f"re голосование"
+                    text="Нет", callback_data=f"re_{poll_id_data}"
                 )  # Добавляем кнопку "Нет"
                 menu.add(confirm_yes_button, confirm_no_button)  # Добавляем обе кнопки
                 confirmation_message = bot.send_message(
@@ -241,9 +241,15 @@ def show_payment(bot, user_id, chat_id, total_price):
             "confirm_message_id": confirm_message.message_id,
             "chat_id": chat_id,
         }
+        # Получаем имя пользователя из словаря users
+        username = users.get(user_id, "Неизвестный пользователь")
+
         print(
             f"show_payment: User {user_id} added to awaiting_confirmation. Current awaiting_confirmation: {awaiting_confirmation}"
         )
+        # Передаем имя пользователя в awaiting_confirmation
+        awaiting_confirmation[user_id] = {"username": username, "confirm_message_id": confirm_message.message_id, "total_price": total_price}
+        print(f"show_payment: User {user_id} added to awaiting_confirmation. Current awaiting_confirmation: {awaiting_confirmation}")
         return payment_message
     else:
         bot.send_message(chat_id, "Нет активных опросов.")
@@ -299,13 +305,15 @@ def payment_confirmation(bot, call):
 def confirm_answers(bot, call):
     user_id = call.from_user.id
     data = call.data.split("_")
+
     if len(data) < 3:
         bot.answer_callback_query(call.id, "Неверные данные для подтверждения.")
         print("Ошибка: Неверные данные для подтверждения (len(data) < 3)")
         return
+
     if data[1] == "re":
+        # Удаляем сообщение с подтверждением и старый опрос
         msgs = message_ids.get(user_id, {})
-        print(f"confirm_answers: message_ids[{user_id}] = {msgs}")  # Добавили
         if "confirm" in msgs:
             try:
                 bot.delete_message(call.message.chat.id, msgs["confirm"])
@@ -317,10 +325,15 @@ def confirm_answers(bot, call):
             except Exception as e:
                 print(f"Ошибка удаления сообщения с опросом: {e}")
 
+        # Очищаем запись о сообщениях пользователя
         message_ids.pop(user_id, None)
-        voting(bot, call.message) #перезапускаем voting
-        #отправляем уведомление
-        bot.send_message(call.message.chat.id, "Запустил голосование еще раз, заполните внимательно")
+
+        # Отправляем сообщение пользователю с просьбой повторить голосование
+        bot.send_message(call.message.chat.id, "Для повторного голосования нажмите команду /voting")
+        voting(bot, call.message)  # Запускаем команду /voting для пользователя
+        bot.answer_callback_query(call.id, "Пожалуйста, проголосуйте еще раз.")
+
+        # Останавливаем выполнение функции
         return
 
     poll_id = data[1]

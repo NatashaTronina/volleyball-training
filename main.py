@@ -52,4 +52,4 @@ def handle_poll_answer(poll_answer):
 
 # Бесконечный цикл работы бота
 print("Бот запущен")
-bot.infinity_polling()
+bot.polling()
