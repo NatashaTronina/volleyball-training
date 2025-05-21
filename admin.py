@@ -15,7 +15,6 @@ letest_poll = {}
 payment_details = {}
 
 POLL_DATA_FILE = "polls.json"
-QR_CODE_DIR = "qr_codes"
 
 def save_polls():
     with open(POLL_DATA_FILE, 'w', encoding='utf-8') as f:
@@ -49,7 +48,7 @@ def start_command(bot, message):
         bot.send_message(message.chat.id, "Привет! Вы используете админ панель, для создания тренировок воспользуйтесь командой /create_poll")
     else:
          bot.send_message(message.chat.id, welcome_message +
-                    "Используйте /voting для участия в опросе и /get_qr для получения QR-кода после подтверждения вашего голоса.")
+                    "Используйте /voting для участия в опросе")
 
 def create_poll_command(bot, message):
     if is_admin(message):

@@ -9,6 +9,7 @@ with open('config.json', 'r') as file:
 TOKEN = config_data.get("token")
 
 bot = telebot.TeleBot(TOKEN)
+awaiting_confirmation = {}
 
 admin.set_commands(bot)
 
