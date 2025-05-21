@@ -6,16 +6,27 @@ import os
 import datetime
 import uuid
 from DATE import get_day_of_week
-from shared_data import awaiting_confirmation
+import qrcode
+from io import BytesIO
+
+data = ""
+with open('config.json', 'r') as file:
+    data = json.load(file)
+
+TOKEN = data.get("token")
+
+bot = telebot.TeleBot(TOKEN)
 
 ADMIN_ID = [494635818]
 poll_data = {}
 poll_results = {}
 letest_poll = {}
-payment_details = {}
 
 POLL_DATA_FILE = "polls.json"
 QR_CODE_DIR = "qr_codes"
+
+if not os.path.exists(QR_CODE_DIR):
+    os.makedirs(QR_CODE_DIR)
 
 def save_polls():
     with open(POLL_DATA_FILE, 'w', encoding='utf-8') as f:
@@ -32,17 +43,19 @@ poll_data = load_polls()
 def is_admin(message):
     return message.from_user.id in ADMIN_ID
 
-# Функция set_commands больше не является обработчиком
-def set_commands(bot):
+def set_commands():
     for admin_id in ADMIN_ID:
         admin_scope = telebot.types.BotCommandScopeChat(chat_id=admin_id)
         admin_commands = [
             telebot.types.BotCommand("create_poll", "Создать опрос"),
             telebot.types.BotCommand("check_payments", "Проверить статусы оплат"),
+            telebot.types.BotCommand("edit_list", "Редактировать список"),
+            telebot.types.BotCommand("confirm_list", "Подтвердить список")
         ]
         bot.set_my_commands(commands=admin_commands, scope=admin_scope)
 
-def start_command(bot, message):
+@bot.message_handler(commands=['start'])
+def start_command(message):
     user_id = message.from_user.id
     welcome_message = "Привет! Я бот для организации волейбольных тренировок.\n\n"
     if is_admin(message):
@@ -51,19 +64,21 @@ def start_command(bot, message):
          bot.send_message(message.chat.id, welcome_message +
                     "Используйте /voting для участия в опросе и /get_qr для получения QR-кода после подтверждения вашего голоса.")
 
-def create_poll_command(bot, message):
+@bot.message_handler(commands=['create_poll'])
+def create_poll_command(message):
     if is_admin(message):
         chat_id = message.chat.id
-        poll_id = str(uuid.uuid4())
+        poll_id = str(uuid.uuid4())  # Генерируем уникальный идентификатор для опроса
         letest_poll["id"] = poll_id
-        poll_data[poll_id] = []
+        print(f"/create_poll: Создан poll_id: {poll_id}")  # Добавлено
+        poll_data[poll_id] = []  # Инициализируем новый опрос с уникальным ID
 
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
-        bot.register_next_step_handler(message, get_date, poll_id, bot)
+        bot.register_next_step_handler(message, get_date, poll_id)  # Передаем poll_id в следующую функцию
     else:
         bot.send_message(message.chat.id, "У вас нет прав для создания опросов.")
 
-def get_date(message, poll_id, bot):
+def get_date(message, poll_id):
     date = message.text
     chat_id = message.chat.id
     if re.match(r"^\d{2}\.\d{2}$", date):
@@ -71,7 +86,7 @@ def get_date(message, poll_id, bot):
         if "Некорректная дата" in day_name:
             bot.send_message(chat_id, day_name)
             bot.send_message(chat_id, "Пожалуйста, введите дату в формате ДД.ММ:")
-            bot.register_next_step_handler(message, get_date, poll_id, bot)
+            bot.register_next_step_handler(message, get_date, poll_id)
             return
 
         year = datetime.date.today().year
@@ -80,12 +95,12 @@ def get_date(message, poll_id, bot):
             poll_data[poll_id].append({'date': date, 'day': day_name, 'year': year, 'created_at': datetime.datetime.now().isoformat()})
             save_polls()
         bot.send_message(chat_id, "Введите время тренировки в формате ЧЧ-ММ (например, 12-00):")
-        bot.register_next_step_handler(message, get_time, poll_id, bot)
+        bot.register_next_step_handler(message, get_time, poll_id)
     else:
         bot.send_message(chat_id, "Неверный формат даты. Пожалуйста, введите дату в формате ДД.ММ:")
-        bot.register_next_step_handler(message, get_date, poll_id, bot)
+        bot.register_next_step_handler(message, get_date, poll_id)
 
-def get_time(message, poll_id, bot):
+def get_time(message, poll_id):
     time = message.text
     chat_id = message.chat.id
     if re.match(r"^\d{2}[:-]\d{2}$", time):
@@ -96,12 +111,12 @@ def get_time(message, poll_id, bot):
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
         bot.send_message(message.chat.id, "Выберите тип тренировки:", reply_markup=keyboard)
-        bot.register_next_step_handler(message, get_training_type, poll_id, bot)
+        bot.register_next_step_handler(message, get_training_type, poll_id)
     else:
         bot.send_message(chat_id, "Неверный формат времени. Пожалуйста, введите время в формате ЧЧ-ММ (например, 12-00):")
-        bot.register_next_step_handler(message, get_time, poll_id, bot)
+        bot.register_next_step_handler(message, get_time, poll_id)
 
-def get_training_type(message, poll_id, bot):
+def get_training_type(message, poll_id):
     training_type = message.text
     chat_id = message.chat.id
     if training_type in ["Игровая", "Техническая"]:
@@ -110,14 +125,14 @@ def get_training_type(message, poll_id, bot):
             save_polls()
 
         bot.send_message(message.chat.id, "Введите цену тренировки:")
-        bot.register_next_step_handler(message, get_price, poll_id, bot)
+        bot.register_next_step_handler(message, get_price, poll_id)
     else:
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
         bot.send_message(message.chat.id, "Неверный тип тренировки. Пожалуйста, выберите из предложенных вариантов:", reply_markup=keyboard)
-        bot.register_next_step_handler(message, get_training_type, poll_id, bot)
+        bot.register_next_step_handler(message, get_training_type, poll_id)
 
-def get_price(message, poll_id, bot):
+def get_price(message, poll_id):
     price = message.text
     chat_id = message.chat.id
 
@@ -130,12 +145,12 @@ def get_price(message, poll_id, bot):
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(types.KeyboardButton("Гимназия"), types.KeyboardButton("Энергия"))
         bot.send_message(message.chat.id, "Выберите место проведения тренировки:", reply_markup=keyboard)
-        bot.register_next_step_handler(message, get_location, poll_id, bot)
+        bot.register_next_step_handler(message, get_location, poll_id)
     except ValueError:
         bot.send_message(message.chat.id, "Неверный формат цены. Пожалуйста, введите число:")
-        bot.register_next_step_handler(message, get_price, poll_id, bot)
+        bot.register_next_step_handler(message, get_price, poll_id)
 
-def get_location(message, poll_id, bot):
+def get_location(message, poll_id):
     location = message.text
     chat_id = message.chat.id
 
@@ -147,20 +162,20 @@ def get_location(message, poll_id, bot):
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(types.KeyboardButton("Добавить комментарий"), types.KeyboardButton("Пропустить"))
         bot.send_message(message.chat.id, "Добавить комментарий к тренировке?", reply_markup=keyboard)
-        bot.register_next_step_handler(message, handle_comment_choice, poll_id, bot)
+        bot.register_next_step_handler(message, handle_comment_choice, poll_id)
     else:
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(types.KeyboardButton("Гимназия"), types.KeyboardButton("Энергия"))
         bot.send_message(message.chat.id, "Неверное место проведения. Пожалуйста, выберите из предложенных вариантов:", reply_markup=keyboard)
-        bot.register_next_step_handler(message, get_location, poll_id, bot)
+        bot.register_next_step_handler(message, get_location, poll_id)
 
-def handle_comment_choice(message, poll_id, bot):
+def handle_comment_choice(message, poll_id):
     choice = message.text
     chat_id = message.chat.id
 
     if choice == "Добавить комментарий":
         bot.send_message(message.chat.id, "Введите комментарий к тренировке:")
-        bot.register_next_step_handler(message, get_comment, poll_id, bot)
+        bot.register_next_step_handler(message, get_comment, poll_id)
     elif choice == "Пропустить":
         if poll_id in poll_data and poll_data[poll_id]:
             poll_data[poll_id][-1]['comment'] = ""
@@ -168,12 +183,12 @@ def handle_comment_choice(message, poll_id, bot):
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
         bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-        bot.register_next_step_handler(message, next_action, poll_id, bot)
+        bot.register_next_step_handler(message, next_action, poll_id)
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных вариантов:")
-        bot.register_next_step_handler(message, handle_comment_choice, poll_id, bot)
+        bot.register_next_step_handler(message, handle_comment_choice, poll_id)
 
-def get_comment(message, poll_id, bot):
+def get_comment(message, poll_id):
     comment = message.text
     chat_id = message.chat.id
     if poll_id in poll_data and poll_data[poll_id]:
@@ -182,22 +197,25 @@ def get_comment(message, poll_id, bot):
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
     bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-    bot.register_next_step_handler(message, next_action, poll_id, bot)
+    bot.register_next_step_handler(message, next_action, poll_id)
 
-def next_action(message, poll_id, bot):
+def next_action(message, poll_id):
     action = message.text
     chat_id = message.chat.id
+    print(f"next_action: poll_id: {poll_id}")  # Добавлено
 
     if action == "Создать опрос":
         bot.send_message(chat_id, "Пожалуйста, отправьте ссылку на оплату СБП:")
-        bot.register_next_step_handler(message, save_sbp_link_to_all, poll_id, bot)
+        bot.register_next_step_handler(message, save_sbp_link_to_all, poll_id)
     elif action == "Добавить еще вариант":
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
-        bot.register_next_step_handler(message, get_date, poll_id, bot)
+        bot.register_next_step_handler(message, get_date, poll_id)
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных")
 
-def create_and_send_poll(bot, call, poll_id):
+def create_and_send_poll(call, poll_id):
+    print(f"create_and_send_poll: poll_id: {poll_id}") # Добавлено
+
     chat_id = call.message.chat.id
     options = []
     if poll_id in poll_data:
@@ -239,17 +257,8 @@ def create_and_send_poll(bot, call, poll_id):
     else:
         bot.send_message(chat_id, "Нет данных для создания опроса.")
 
-def handle_callback_query(bot, call):
-    if call.data.startswith('poll_correct'):
-        callback_query(bot, call)
-    elif call.data.startswith('poll_edit'):
-        callback_query(bot, call)
-    elif call.data.startswith("admin_confirm_"):
-        admin_confirm_payment(bot, call)
-    elif call.data.startswith("confirm_payment_"):
-        confirm_payment(bot, call)
-
-def callback_query(bot, call):
+@bot.callback_query_handler(func=lambda call: call.data.startswith('poll_correct') or call.data.startswith('poll_edit'))
+def callback_query(call):
     chat_id = call.message.chat.id
     callback_data = call.data
 
@@ -262,48 +271,54 @@ def callback_query(bot, call):
     elif callback_data.startswith('poll_edit'):
         bot.send_message(chat_id, "Начинаем пересоздание опроса...")
         if poll_id in poll_data:
-            poll_data[poll_id].clear()
+            poll_data[poll_id].clear()  # Очищаем данные для текущего опроса
             save_polls()
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
-        bot.register_next_step_handler(call.message, get_date, poll_id, bot)
+        bot.register_next_step_handler(call.message, get_date, poll_id)
 
-def save_sbp_link_to_all(message, poll_id, bot):
+def save_sbp_link_to_all(message, poll_id):
+    print(f"save_sbp_link_to_all: poll_id: {poll_id}") # Добавлено
+
     sbp_link = message.text.strip()
     chat_id = message.chat.id
 
     if poll_id in poll_data:
-        for item in poll_data[poll_id]:
+        # Check if the poll ID exists
+        for item in poll_data[poll_id]:  # Iterate through all polls for the given id
             item['payment_link'] = sbp_link
 
         save_polls()
         bot.send_message(chat_id, "Ссылка на СБП сохранена. Отправляю опрос")
 
+        # Create a mock 'call' object
         call = types.CallbackQuery(id='0', from_user=message.from_user, data=f'poll_correct_{poll_id}', message=message, chat_instance='', json_string=None) #id and from_user need to be valid, message will be the current message
 
-        create_and_send_poll(bot, call, poll_id)
+        create_and_send_poll(call, poll_id) #Correct call
 
     else:
         bot.send_message(chat_id, "Ошибка: Не найден опрос. Пожалуйста, начните сначала.")
 
-def handle_poll_answer(bot, poll_answer):
+@bot.poll_answer_handler()
+def handle_poll_answer(poll_answer):
     user_id = poll_answer.user.id
     poll_id = poll_answer.poll_id
     option_ids = poll_answer.option_ids
-    global poll_results
-    if poll_id not in poll_results:
-        poll_results[poll_id] = {'total_votes': 0, 'options': {}}
-    if user_id not in poll_results.get('users', {}):
-        # Увеличиваем общее количество голосов за poll_id
-        poll_results[poll_id]['total_votes'] += 1
-        # Регистрируем пользователя как проголосовавшего (внутри poll_results или в отдельном словаре)
-        if 'users' not in poll_results:
-            poll_results['users'] = {}
-        poll_results['users'][user_id] = poll_id
-    for i in option_ids:
-        if i not in poll_results[poll_id]['options']:
-            poll_results[poll_id]['options'][i] = 0
-        poll_results[poll_id]['options'][i] += 1
 
+    global poll_results
+
+    if poll_id not in poll_results:
+        poll_results[user_id] = {'voted': True, 'poll_id': poll_id}
+        print(f"WARNING: poll_id {poll_id} not found in poll_results")
+        return
+
+    if user_id not in poll_results:
+          poll_results[user_id] = {'voted': True, 'poll_id': poll_id}
+
+    poll_results[user_id]['voted'] = True
+    for i in option_ids:
+        if i not in poll_results[poll_id]:
+            poll_results[poll_id][i] = 0
+        poll_results[poll_id][i] += 1
 
 def get_latest_poll():
     loaded_polls = load_polls()
@@ -311,6 +326,7 @@ def get_latest_poll():
     latest_poll = None
     latest_created_at = None
     latest_poll_id = None #Added this
+
     for poll_id, poll_list in loaded_polls.items():
         if poll_list and isinstance(poll_list, list) and len(poll_list) > 0:
             for poll_item in poll_list:
@@ -319,96 +335,19 @@ def get_latest_poll():
                     created_at = datetime.datetime.fromisoformat(created_at_str)
                 except (KeyError, ValueError, TypeError):
                     continue
+
                 if latest_created_at is None or created_at > latest_created_at:
                     latest_created_at = created_at
-                    latest_poll = poll_list #It should work
+                    latest_poll = poll_item #It should work
                     latest_poll_id  = poll_id  #Save it
+
     if latest_poll: #Then you return as a dict.
         print(f"Returning latest poll: {{'{latest_poll_id}': [{latest_poll}]}}") # Add this
-        return {latest_poll_id: latest_poll} #Return as dict
+        return {latest_poll_id: [latest_poll]} #Return as dict
     print("Returning None") # Add this
     return None
-def check_payments(bot, message):
-    print(f"check_payments: Command received. Current awaiting_confirmation: {awaiting_confirmation}")
-    if is_admin(message):
-        if awaiting_confirmation:
-            payment_list = "Список ожидающих подтверждения оплат:\n"
-            for user_id, payment_info in awaiting_confirmation.items():
-                username = payment_info["username"]
-                total_price = payment_info["total_price"]
-                payment_list += f"@{username} - Сумма: {total_price}\n"
-                # Add admin confirmation button for each user
-                keyboard = types.InlineKeyboardMarkup()
-                confirm_button = types.InlineKeyboardButton(text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}")
-                keyboard.add(confirm_button)
-                bot.send_message(message.chat.id, payment_list, reply_markup=keyboard)  # Send the information with the button
-                payment_list = " " # чтобы кнопка выводилась под каждым пользователем, а не в самом конце
-        else:
-            bot.send_message(message.chat.id, "Нет ожидающих подтверждения оплат.")
-    else:
-        bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
 
-def admin_confirm_payment(bot, call):
-    admin_id = call.from_user.id
-    if admin_id in ADMIN_ID:
-        user_id = call.data.split("_")[2]
-        total_price = call.data.split("_")[3]
-        chat_id = call.message.chat.id
-        username = awaiting_confirmation[int(user_id)]["username"]
-        del awaiting_confirmation[int(user_id)]
-
-        try:
-            del payment_details[int(user_id)]
-        except KeyError:
-            print(f"Ошибка: Не удалось найти payment_details для user_id {user_id}")
-
-        bot.send_message(int(user_id), f"Ваша оплата на сумму {total_price} руб. подтверждена администратором.")
-        bot.answer_callback_query(call.id, "Оплата подтверждена.")
-
-        try:
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-        except Exception as e:
-            print(f"Ошибка удаления сообщения подтверждения: {e}")
-    else:
-        bot.send_message(call.message.chat.id, "У вас нет прав на выполнение этой операции.")
-        bot.answer_callback_query(call.id, "Нет прав.")
-
-def handle_callback_query(bot, call):
-    if call.data.startswith('poll_correct'):
-        callback_query(bot, call)
-    elif call.data.startswith('poll_edit'):
-        callback_query(bot, call)
-    elif call.data.startswith("admin_confirm_"):
-        admin_confirm_payment(bot, call)
-    elif call.data.startswith("confirm_payment_"):
-        confirm_payment(bot, call)
-
-def confirm_payment(bot, call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    total_price = call.data.split("_")[-1]
-
-    if user_id in awaiting_confirmation:
-        username = awaiting_confirmation[user_id]["username"]
-        confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
-
-        # Remove confirmation message
-        try:
-            bot.delete_message(chat_id, confirm_message_id)
-        except Exception as e:
-            print(f"Error deleting confirmation message: {e}")
-
-        del awaiting_confirmation[user_id]
-
-        admin_message = f"@{username} подтвердил оплату на сумму {total_price}"
-        keyboard = types.InlineKeyboardMarkup()
-        confirm_button = types.InlineKeyboardButton(
-            text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}"
-        )
-        keyboard.add(confirm_button)
-
-        for admin_id in ADMIN_ID:
-            bot.send_message(admin_id, admin_message, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, "Ошибка: Запрос на подтверждение не найден.")
-        bot.answer_callback_query(call.id, "Произошла ошибка.")
+if __name__ == "__main__":
+    print("Admin bot started")
+    set_commands()
+    bot.polling()
