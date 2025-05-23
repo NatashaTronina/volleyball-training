@@ -6,7 +6,7 @@ import os
 import datetime
 import uuid
 from DATE import get_day_of_week
-from shared_data import awaiting_confirmation
+from shared_data import awaiting_confirmation, confirmed_payments
 
 ADMIN_ID = [494635818]
 poll_data = {}
@@ -353,9 +353,6 @@ def check_payments(bot, message):
     else:
         bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
 
-
-
-
 def admin_confirm_payment(bot, call):
     admin_id = call.from_user.id
     if admin_id in ADMIN_ID:
@@ -364,15 +361,9 @@ def admin_confirm_payment(bot, call):
         chat_id = call.message.chat.id
         username = awaiting_confirmation[int(user_id)]["username"]
         del awaiting_confirmation[int(user_id)]
-
-        # try:
-        #     del payment_details[int(user_id)]
-        # except KeyError:
-        #     print(f"Ошибка: Не удалось найти payment_details для user_id {user_id}")
-
-        bot.send_message(int(user_id), f"Ваша оплата на сумму {total_price} руб. подтверждена администратором.")
+        # Сохраняем информацию о подтвержденной оплате
+        confirmed_payments[int(user_id)] = total_price
         bot.answer_callback_query(call.id, "Оплата подтверждена.")
-
         try:
             bot.delete_message(call.message.chat.id, call.message.message_id)
         except Exception as e:

@@ -8,7 +8,7 @@ from io import BytesIO
 import datetime
 import time
 import threading
-from shared_data import awaiting_confirmation
+from shared_data import awaiting_confirmation, confirmed_payments
 
 users = {}
 user_confirmed = {}
@@ -66,8 +66,14 @@ def status(bot, message):
     user_id = message.from_user.id
     if user_id in users:
         try:
-            payment_status = "Оплачено"
-            bot.reply_to(message, f"Ваш статус оплаты: {payment_status}")
+            if user_id in awaiting_confirmation:
+                total_price = awaiting_confirmation[user_id]["total_price"]
+                bot.reply_to(message, f"Ваша оплата не подтверждена администратором.")
+            elif user_id in confirmed_payments:
+                total_price = confirmed_payments[user_id]
+                bot.reply_to(message, f"Ваша оплата на сумму {total_price} руб. подтверждена администратором.")
+            else:
+                bot.reply_to(message, "У вас нет активных оплат.")
         except Exception as e:
             bot.reply_to(message, f"Ошибка при проверке статуса оплаты: {e}")
     else:
