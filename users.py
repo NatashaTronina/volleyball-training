@@ -321,7 +321,6 @@ def confirm_answers(bot, call):
 
     if len(data) < 3:
         bot.answer_callback_query(call.id, "Неверные данные для подтверждения.")
-        print("Ошибка: Неверные данные для подтверждения (len(data) < 3)")
         return
 
     poll_id = data[1]
@@ -348,7 +347,6 @@ def confirm_answers(bot, call):
 
     if latest_poll:
         poll_id, poll_data_item = list(latest_poll.items())[0]
-        print(f"confirm_answers: loaded_poll_id = {poll_id}")
         if isinstance(poll_data_item, list) and len(poll_data_item) > 0:
             payment_link = None
 
@@ -366,8 +364,6 @@ def confirm_answers(bot, call):
                     threading.Thread(
                         target=payment_timeout, args=(bot, user_id, qr_info, total_price)
                     ).start()
-    else:
-        print("Ошибка: Нет активных опросов (latest_poll is None)")
 
 
 def handle_callback_query(bot, call):

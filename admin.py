@@ -47,8 +47,7 @@ def start_command(bot, message):
     if is_admin(message):
         bot.send_message(message.chat.id, "Привет! Вы используете админ панель, для создания тренировок воспользуйтесь командой /create_poll")
     else:
-         bot.send_message(message.chat.id, welcome_message +
-                    "Используйте /voting для участия в опросе")
+         bot.send_message(message.chat.id, welcome_message + "Используйте /voting для участия в опросе")
 
 def create_poll_command(bot, message):
     if is_admin(message):
@@ -325,46 +324,36 @@ def get_latest_poll():
                     latest_poll_id  = poll_id  #Save it
     if latest_poll: #Then you return as a dict.
         print(f"Returning latest poll: {{'{latest_poll_id}': [{latest_poll}]}}") # Add this
-        return {latest_poll_id: latest_poll} #Return as dict
-    print("Returning None") # Add this
+        return {latest_poll_id: latest_poll} 
     return None
-def check_payments(bot, message):
-    print(
-        f"check_payments: Command received. Current awaiting_confirmation: {awaiting_confirmation}"
-    )
-    if is_admin(message):
-        # Send initial message and store its ID.
-        initial_message = bot.send_message(message.chat.id, "Список ожидающих подтверждения оплат:", parse_mode="Markdown")
-        initial_message_id = initial_message.message_id
 
+def check_payments(bot, message):
+    if is_admin(message):
         if awaiting_confirmation:
+            # Формируем текст со списком ожидающих оплат
+            text = "Список ожидающих подтверждения оплат:\n"
             for user_id, payment_info in awaiting_confirmation.items():
                 username = payment_info["username"]
                 total_price = payment_info["total_price"]
 
-                # Form the message with user info
+                # Формируем сообщение с информацией о пользователе
                 admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
 
-                # Add admin confirmation button for each user
+                # Добавляем кнопку подтверждения для каждого пользователя
                 keyboard = types.InlineKeyboardMarkup()
                 confirm_button = types.InlineKeyboardButton(
                     text="Подтвердить оплату",
                     callback_data=f"admin_confirm_{user_id}_{total_price}",
                 )
                 keyboard.add(confirm_button)
-                bot.send_message(
-                    message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown"
-                )  # Send the information with the button
+                bot.send_message(message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
         else:
-            # Edit the message to indicate an empty list.
-            try:
-                bot.edit_message_text(chat_id=message.chat.id, message_id=initial_message_id, text="Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
-            except Exception as e:
-                print(f"Ошибка редактирования сообщения: {e}")
+            # Если список пуст, отправляем сообщение об этом
+            bot.send_message(message.chat.id, "Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
     else:
-        bot.send_message(
-            message.chat.id, "У вас нет прав для просмотра этой информации."
-        )
+        bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
+
+
 
 
 def admin_confirm_payment(bot, call):
@@ -376,10 +365,10 @@ def admin_confirm_payment(bot, call):
         username = awaiting_confirmation[int(user_id)]["username"]
         del awaiting_confirmation[int(user_id)]
 
-        try:
-            del payment_details[int(user_id)]
-        except KeyError:
-            print(f"Ошибка: Не удалось найти payment_details для user_id {user_id}")
+        # try:
+        #     del payment_details[int(user_id)]
+        # except KeyError:
+        #     print(f"Ошибка: Не удалось найти payment_details для user_id {user_id}")
 
         bot.send_message(int(user_id), f"Ваша оплата на сумму {total_price} руб. подтверждена администратором.")
         bot.answer_callback_query(call.id, "Оплата подтверждена.")
