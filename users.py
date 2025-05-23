@@ -115,6 +115,7 @@ def voting(bot, message):
            sent_poll = bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
            user_confirmed[message.from_user.id] = False
            message_ids[message.from_user.id] = message_ids.get(message.from_user.id, {})
+           # Ключ "poll" должен хранить именно message_id отправленного сообщения с опросом (sent_poll.message_id), а не poll_id
            message_ids[message.from_user.id]["poll"] = sent_poll.message_id
         except Exception as e:
             bot.send_message(chat_id, f"Не удалось создать опрос: {e}")
@@ -148,15 +149,17 @@ def handle_poll_answer(bot, poll_answer):
                 )
                 confirm_no_button = telebot.types.InlineKeyboardButton(
                     text="Нет", callback_data=f"re_{poll_id_data}"
-                )  # Добавляем кнопку "Нет"
-                menu.add(confirm_yes_button, confirm_no_button)  # Добавляем обе кнопки
-                confirmation_message = bot.send_message(
-                    user_id, f"Вы подтверждаете свои ответы?", reply_markup=menu
                 )
+                menu.add(confirm_yes_button, confirm_no_button)
+                # Store the sent poll message
+                poll_message = bot.send_message(user_id, f"Вы подтверждаете свои ответы?", reply_markup=menu)
 
                 user_confirmed[user_id] = True
-                message_ids[user_id] = message_ids.get(user_id, {})
-                message_ids[user_id]["confirm"] = confirmation_message.message_id
+                # Save both confirmation and poll message IDs
+                message_ids[user_id] = {
+                    "confirm": poll_message.message_id,  # message_id of confirm message
+                    "poll": message_ids[user_id].get("poll")  # Keep the stored polling message id
+                }
 
         else:
             bot.send_message(chat_id, "Не удалось получить данные о тренировках.")
@@ -164,6 +167,7 @@ def handle_poll_answer(bot, poll_answer):
     else:
         bot.send_message(chat_id, "Нет активных опросов.")
 
+# Остальные функции без изменений, включая confirm_answers с удалением сообщений по правильным id.
 
 def payment_timeout(bot, user_id, qr_info, total_price):
     start_time = time.time()
@@ -179,10 +183,7 @@ def payment_timeout(bot, user_id, qr_info, total_price):
             except Exception as e:
                 print(f"Error deleting message: {e}")
 
-            bot.send_message(
-                qr_info["chat_id"],
-                "Вы не подтвердили оплату и реквизиты были удалены. Нажмите команду /voting для повторного голосования.",
-            )
+            bot.send_message(qr_info["chat_id"],"Вы не подтвердили оплату и реквизиты были удалены. Нажмите команду /voting для повторного голосования.",)
             payment_timers.pop(user_id, None)
 
 
@@ -244,12 +245,8 @@ def show_payment(bot, user_id, chat_id, total_price):
         # Получаем имя пользователя из словаря users
         username = users.get(user_id, "Неизвестный пользователь")
 
-        print(
-            f"show_payment: User {user_id} added to awaiting_confirmation. Current awaiting_confirmation: {awaiting_confirmation}"
-        )
         # Передаем имя пользователя в awaiting_confirmation
         awaiting_confirmation[user_id] = {"username": username, "confirm_message_id": confirm_message.message_id, "total_price": total_price}
-        print(f"show_payment: User {user_id} added to awaiting_confirmation. Current awaiting_confirmation: {awaiting_confirmation}")
         return payment_message
     else:
         bot.send_message(chat_id, "Нет активных опросов.")
@@ -289,7 +286,6 @@ def cancel_payment(bot, call):
 def payment_confirmation(bot, call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
-    # Clear timer
     if user_id in payment_timers:
         payment_info = payment_timers.pop(user_id, None)
         try:
@@ -306,13 +302,7 @@ def confirm_answers(bot, call):
     user_id = call.from_user.id
     data = call.data.split("_")
 
-    if len(data) < 3:
-        bot.answer_callback_query(call.id, "Неверные данные для подтверждения.")
-        print("Ошибка: Неверные данные для подтверждения (len(data) < 3)")
-        return
-
-    if data[1] == "re":
-        # Удаляем сообщение с подтверждением и старый опрос
+    if data[0] == "re":
         msgs = message_ids.get(user_id, {})
         if "confirm" in msgs:
             try:
@@ -324,16 +314,14 @@ def confirm_answers(bot, call):
                 bot.delete_message(call.message.chat.id, msgs["poll"])
             except Exception as e:
                 print(f"Ошибка удаления сообщения с опросом: {e}")
-
-        # Очищаем запись о сообщениях пользователя
         message_ids.pop(user_id, None)
 
-        # Отправляем сообщение пользователю с просьбой повторить голосование
-        bot.send_message(call.message.chat.id, "Для повторного голосования нажмите команду /voting")
-        voting(bot, call.message)  # Запускаем команду /voting для пользователя
-        bot.answer_callback_query(call.id, "Пожалуйста, проголосуйте еще раз.")
+        bot.send_message(call.message.chat.id, "Вы не подтвердили ваши ответы, для повторного голосования нажмите команду /voting")
+        return
 
-        # Останавливаем выполнение функции
+    if len(data) < 3:
+        bot.answer_callback_query(call.id, "Неверные данные для подтверждения.")
+        print("Ошибка: Неверные данные для подтверждения (len(data) < 3)")
         return
 
     poll_id = data[1]
@@ -343,7 +331,6 @@ def confirm_answers(bot, call):
     bot.answer_callback_query(call.id)
 
     msgs = message_ids.get(user_id, {})
-    print(f"confirm_answers: message_ids[{user_id}] = {msgs}")  # Добавили
     if "confirm" in msgs:
         try:
             bot.delete_message(chat_id, msgs["confirm"])
@@ -382,6 +369,7 @@ def confirm_answers(bot, call):
     else:
         print("Ошибка: Нет активных опросов (latest_poll is None)")
 
+
 def handle_callback_query(bot, call):
     if call.data.startswith("cancel_payment_"):
         cancel_payment(bot, call)
@@ -393,3 +381,4 @@ def handle_callback_query(bot, call):
         resend_payment(bot, call)
     elif call.data.startswith("re"):
         confirm_answers(bot, call)
+
