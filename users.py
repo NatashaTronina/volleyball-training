@@ -44,7 +44,7 @@ def load_latest_poll():
         return None
 
 
-def start_command(bot, message):
+def users_start_command(bot, message):
     user_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name

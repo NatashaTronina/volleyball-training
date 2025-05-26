@@ -36,6 +36,7 @@ def set_commands(bot):
     for admin_id in ADMIN_ID:
         admin_scope = telebot.types.BotCommandScopeChat(chat_id=admin_id)
         admin_commands = [
+            telebot.types.BotCommand("start", "Начать работу с ботом"),
             telebot.types.BotCommand("create_poll", "Создать опрос"),
             telebot.types.BotCommand("check_payments", "Проверить статусы оплат"),
             telebot.types.BotCommand('edit_list', "Редактировать список"),
@@ -43,13 +44,14 @@ def set_commands(bot):
         ]
         bot.set_my_commands(commands=admin_commands, scope=admin_scope)
 
-def start_command(bot, message):
-    user_id = message.from_user.id
-    welcome_message = "Привет! Я бот для организации волейбольных тренировок.\n\n"
+
+def admin_start_command(bot, message):
     if is_admin(message):
-        bot.send_message(message.chat.id, "Привет! Вы используете админ панель, для создания тренировок воспользуйтесь командой /create_poll")
-    else:
-         bot.send_message(message.chat.id, welcome_message + "Используйте /voting для участия в опросе")
+        first_name = message.from_user.first_name
+        chat_id = message.chat.id
+
+        bot.send_message(chat_id, f"Привет, {first_name}! Для создания тренировок нажми команду /create_poll")
+        bot.register_next_step_handler(message,bot)
 
 def create_poll_command(bot, message):
     if is_admin(message):
@@ -93,8 +95,9 @@ def get_time(message, poll_id, bot):
             poll_data[poll_id][-1]['time'] = time
             save_polls()
 
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton("Игровая", callback_data="training_type_Игровая"),
+                     types.InlineKeyboardButton("Техническая", callback_data="training_type_Техническая"))
         bot.send_message(message.chat.id, "Выберите тип тренировки:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_training_type, poll_id, bot)
     else:
@@ -112,8 +115,9 @@ def get_training_type(message, poll_id, bot):
         bot.send_message(message.chat.id, "Введите цену тренировки:")
         bot.register_next_step_handler(message, get_price, poll_id, bot)
     else:
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton("Игровая", callback_data="training_type_Игровая"),
+                     types.InlineKeyboardButton("Техническая", callback_data="training_type_Техническая"))
         bot.send_message(message.chat.id, "Неверный тип тренировки. Пожалуйста, выберите из предложенных вариантов:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_training_type, poll_id, bot)
 
@@ -127,8 +131,9 @@ def get_price(message, poll_id, bot):
             poll_data[poll_id][-1]['price'] = price
             save_polls()
 
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Гимназия"), types.KeyboardButton("Энергия"))
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton("Гимназия", callback_data="location_Гимназия"),
+                     types.InlineKeyboardButton("Энергия", callback_data="location_Энергия"))
         bot.send_message(message.chat.id, "Выберите место проведения тренировки:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_location, poll_id, bot)
     except ValueError:
@@ -144,13 +149,15 @@ def get_location(message, poll_id, bot):
             poll_data[poll_id][-1]['location'] = location
             save_polls()
 
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Добавить комментарий"), types.KeyboardButton("Пропустить"))
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton("Добавить комментарий", callback_data="comment_add"),
+                     types.InlineKeyboardButton("Пропустить", callback_data="comment_skip"))
         bot.send_message(message.chat.id, "Добавить комментарий к тренировке?", reply_markup=keyboard)
         bot.register_next_step_handler(message, handle_comment_choice, poll_id, bot)
     else:
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Гимназия"), types.KeyboardButton("Энергия"))
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton("Гимназия", callback_data="location_Гимназия"),
+                     types.InlineKeyboardButton("Энергия", callback_data="location_Энергия"))
         bot.send_message(message.chat.id, "Неверное место проведения. Пожалуйста, выберите из предложенных вариантов:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_location, poll_id, bot)
 
@@ -165,8 +172,9 @@ def handle_comment_choice(message, poll_id, bot):
         if poll_id in poll_data and poll_data[poll_id]:
             poll_data[poll_id][-1]['comment'] = ""
             save_polls()
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton("Создать опрос", callback_data="create_poll"),
+                     types.InlineKeyboardButton("Добавить еще вариант", callback_data="add_variant"))
         bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
         bot.register_next_step_handler(message, next_action, poll_id, bot)
     else:
@@ -179,8 +187,9 @@ def get_comment(message, poll_id, bot):
     if poll_id in poll_data and poll_data[poll_id]:
         poll_data[poll_id][-1]['comment'] = comment
         save_polls()
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton("Создать опрос", callback_data="create_poll"),
+                 types.InlineKeyboardButton("Добавить еще вариант", callback_data="add_variant"))
     bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
     bot.register_next_step_handler(message, next_action, poll_id, bot)
 
@@ -209,20 +218,19 @@ def create_and_send_poll(bot, call, poll_id):
             price = option.get('price', 'Не указана')
             location = option.get('location', 'Не указана')
             comment = option.get('comment', '')
-            payment_link = option.get('payment_link', '')  # Get the payment link
+            payment_link = option.get('payment_link', '')
 
-            #Create a shortened string
             option_string = f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}"
 
-            if len(option_string) > 90: #Truncate if too long
-                option_string = option_string[:87] + "..." #Truncate and add ellipsis
-            options.append(option_string)  # Add payment link to each option
+            if len(option_string) > 90:
+                option_string = option_string[:87] + "..."
+            options.append(option_string)
 
-        options.append("Не пойду на волейбол")  # Добавляем вариант по умолчанию
+        options.append("Не пойду на волейбол")
         question = "Волейбол - выберите подходящий вариант:"
 
         try:
-            sent_poll = bot.send_poll(chat_id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)  # Разрешаем голосовать за несколько вариантов
+            sent_poll = bot.send_poll(chat_id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
 
             poll_id_sent = sent_poll.poll.id
             poll_results[chat_id] = {'voted': False, 'poll_id': poll_id_sent}
@@ -240,7 +248,6 @@ def create_and_send_poll(bot, call, poll_id):
         bot.send_message(chat_id, "Нет данных для создания опроса.")
 
 def handle_callback_query(bot, call):
-    print(f"admin.handle_callback_query: call.data = {call.data}") # Добавили
     if call.data.startswith('poll_correct'):
         callback_query(bot, call)
     elif call.data.startswith('poll_edit'):
@@ -254,8 +261,7 @@ def callback_query(bot, call):
     chat_id = call.message.chat.id
     callback_data = call.data
 
-    # Правильно извлекаем poll_id из callback_data
-    poll_id = callback_data.split('_')[2]  # Правильный индекс: poll_correct_pollID - pollID будет на позиции 2
+    poll_id = callback_data.split('_')[2]
 
     if callback_data.startswith('poll_correct'):
         bot.send_message(chat_id, "Опрос подтвержден и отправлен пользователям!")
@@ -279,7 +285,7 @@ def save_sbp_link_to_all(message, poll_id, bot):
         save_polls()
         bot.send_message(chat_id, "Ссылка на СБП сохранена. Отправляю опрос")
 
-        call = types.CallbackQuery(id='0', from_user=message.from_user, data=f'poll_correct_{poll_id}', message=message, chat_instance='', json_string=None) #id and from_user need to be valid, message will be the current message
+        call = types.CallbackQuery(id='0', from_user=message.from_user, data=f'poll_correct_{poll_id}', message=message, chat_instance='', json_string=None)
 
         create_and_send_poll(bot, call, poll_id)
 
@@ -294,9 +300,7 @@ def handle_poll_answer(bot, poll_answer):
     if poll_id not in poll_results:
         poll_results[poll_id] = {'total_votes': 0, 'options': {}}
     if user_id not in poll_results.get('users', {}):
-        # Увеличиваем общее количество голосов за poll_id
         poll_results[poll_id]['total_votes'] += 1
-        # Регистрируем пользователя как проголосовавшего (внутри poll_results или в отдельном словаре)
         if 'users' not in poll_results:
             poll_results['users'] = {}
         poll_results['users'][user_id] = poll_id
@@ -305,13 +309,11 @@ def handle_poll_answer(bot, poll_answer):
             poll_results[poll_id]['options'][i] = 0
         poll_results[poll_id]['options'][i] += 1
 
-
 def get_latest_poll():
     loaded_polls = load_polls()
-    print(f"Loaded polls: {loaded_polls}") #Add this
     latest_poll = None
     latest_created_at = None
-    latest_poll_id = None #Added this
+    latest_poll_id = None
     for poll_id, poll_list in loaded_polls.items():
         if poll_list and isinstance(poll_list, list) and len(poll_list) > 0:
             for poll_item in poll_list:
@@ -322,26 +324,22 @@ def get_latest_poll():
                     continue
                 if latest_created_at is None or created_at > latest_created_at:
                     latest_created_at = created_at
-                    latest_poll = poll_list #It should work
-                    latest_poll_id  = poll_id  #Save it
-    if latest_poll: #Then you return as a dict.
-        print(f"Returning latest poll: {{'{latest_poll_id}': [{latest_poll}]}}") # Add this
+                    latest_poll = poll_list
+                    latest_poll_id  = poll_id
+    if latest_poll:
         return {latest_poll_id: latest_poll} 
     return None
 
 def check_payments(bot, message):
     if is_admin(message):
         if awaiting_confirmation:
-            # Формируем текст со списком ожидающих оплат
             text = "Список ожидающих подтверждения оплат:\n"
             for user_id, payment_info in awaiting_confirmation.items():
                 username = payment_info["username"]
                 total_price = payment_info["total_price"]
 
-                # Формируем сообщение с информацией о пользователе
                 admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
 
-                # Добавляем кнопку подтверждения для каждого пользователя
                 keyboard = types.InlineKeyboardMarkup()
                 confirm_button = types.InlineKeyboardButton(
                     text="Подтвердить оплату",
@@ -350,7 +348,6 @@ def check_payments(bot, message):
                 keyboard.add(confirm_button)
                 bot.send_message(message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
         else:
-            # Если список пуст, отправляем сообщение об этом
             bot.send_message(message.chat.id, "Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
     else:
         bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
@@ -363,7 +360,6 @@ def admin_confirm_payment(bot, call):
         chat_id = call.message.chat.id
         username = awaiting_confirmation[int(user_id)]["username"]
         del awaiting_confirmation[int(user_id)]
-        # Сохраняем информацию о подтвержденной оплате
         confirmed_payments[int(user_id)] = total_price
         bot.answer_callback_query(call.id, "Оплата подтверждена.")
         try:
@@ -373,16 +369,6 @@ def admin_confirm_payment(bot, call):
     else:
         bot.send_message(call.message.chat.id, "У вас нет прав на выполнение этой операции.")
         bot.answer_callback_query(call.id, "Нет прав.")
-
-def handle_callback_query(bot, call):
-    if call.data.startswith('poll_correct'):
-        callback_query(bot, call)
-    elif call.data.startswith('poll_edit'):
-        callback_query(bot, call)
-    elif call.data.startswith("admin_confirm_"):
-        admin_confirm_payment(bot, call)
-    elif call.data.startswith("confirm_payment_"):
-        confirm_payment(bot, call)
 
 def confirm_payment(bot, call):
     print("confirm_payment: Функция вызвана!")
