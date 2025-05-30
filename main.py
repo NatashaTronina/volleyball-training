@@ -3,6 +3,8 @@ import json
 import admin
 import users
 from admin import is_admin, ADMIN_ID
+from users import handle_poll_answer as users_handle_poll_answer
+from users import handle_callback_query as users_handle_callback_query
 
 with open('config.json', 'r') as file:
     config_data = json.load(file)
@@ -10,7 +12,7 @@ TOKEN = config_data.get("token")
 
 bot = telebot.TeleBot(TOKEN)
 
-# Set commands at startup
+# Установка команд при запуске
 admin.set_commands(bot)
 
 # Обработчик для команды /start для пользователей (в том числе и админов, но с каким-то условием)
@@ -22,12 +24,10 @@ def handle_start(message):
     else:
         # Обычный пользователь
         users.users_start_command(bot, message)
-
 # Остальные команды пользователей
 @bot.message_handler(commands=['help', 'status', 'voting'])
 def handle_user_other_commands(message):
     if is_admin(message):
-        # Можно здесь не обрабатывать, или вообще убрать проверку
         return
     if message.text == '/help':
         users.help_command(bot, message)
@@ -36,7 +36,7 @@ def handle_user_other_commands(message):
     elif message.text == '/voting':
         users.voting(bot, message)
 
-# Админские команды без /start (потому что /start вынесен отдельно)
+# Админские команды
 @bot.message_handler(commands=['create_poll', 'check_payments', 'edit_list', 'confirm_list'])
 def handle_admin_commands(message):
     if not is_admin(message):
@@ -51,20 +51,15 @@ def handle_admin_commands(message):
     elif message.text == '/confirm_list':
         admin.confirm_list_command(bot, message)
 
-
-# Обработчики для callback_query (кнопки)
+# Обработчики для callback_query
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
-    if call.data.startswith('poll_correct') or call.data.startswith('poll_edit') or call.data.startswith("admin_confirm_"):
-        admin.handle_callback_query(bot, call)
-    elif call.data.startswith("confirm_payment_") or call.data.startswith("cancel_payment_") or call.data.startswith("paid_") or call.data.startswith("confirm_") or call.data.startswith("get_payment_") or call.data.startswith("re"):
-        users.handle_callback_query(bot, call)
+    users_handle_callback_query(bot, call)
 
 # Обработчик для poll_answer
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):
-    users.handle_poll_answer(bot, poll_answer)
+    users_handle_poll_answer(bot, poll_answer)
 
 print("Бот запущен")
-bot.polling()
-
+bot.polling(none_stop=True)
