@@ -2,9 +2,10 @@ import telebot
 import json
 import admin
 import users
-from admin import is_admin, ADMIN_ID
+from admin import is_admin, admin_confirm_payment #Импорт admin_confirm_payment
 from users import handle_poll_answer as users_handle_poll_answer
 from users import handle_callback_query as users_handle_callback_query
+
 
 with open('config.json', 'r') as file:
     config_data = json.load(file)
@@ -54,7 +55,11 @@ def handle_admin_commands(message):
 # Обработчики для callback_query
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
-    users_handle_callback_query(bot, call)
+    if call.data.startswith("admin_confirm_"):
+        admin.admin_confirm_payment(bot, call) #Вызов функции для админа
+    else:
+        users_handle_callback_query(bot, call)  # Вызов функции для users.py
+
 
 # Обработчик для poll_answer
 @bot.poll_answer_handler()

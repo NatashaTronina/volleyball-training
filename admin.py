@@ -284,7 +284,7 @@ def save_sbp_link_to_all(message, poll_id, bot):
 
         save_polls()
         bot.send_message(chat_id, "Ссылка на СБП сохранена. Пожалуйста, введите дату для отправки опроса в формате ДД.ММ:")
-        bot.register_next_step_handler(message, get_scheduled_date, poll_id, bot)  # Prompt for scheduled date
+        bot.register_next_step_handler(message, get_scheduled_date, poll_id, bot) 
     else:
         bot.send_message(chat_id, "Ошибка: Не найден опрос. Пожалуйста, начните сначала.")
 
@@ -293,8 +293,6 @@ def get_scheduled_date(message, poll_id, bot):
     chat_id = message.chat.id
     if re.match(r"^\d{2}\.\d{2}$", date):
         if poll_id in poll_data:
-            ### ИЗМЕНЕНО ###
-            # Сохраняем дату отправки для всех элементов списка
             for item in poll_data[poll_id]:
                 item['scheduled_date'] = date
             save_polls()
@@ -309,8 +307,6 @@ def get_scheduled_time(message, poll_id, bot):
     chat_id = message.chat.id
     if re.match(r"^\d{2}[:-]\d{2}$", time_input):
         if poll_id in poll_data and poll_data[poll_id]:
-            ### ИЗМЕНЕНО ###
-            # Сохраняем время отправки для всех элементов списка
             for item in poll_data[poll_id]:
                 item['scheduled_time'] = time_input
             save_polls()
@@ -319,7 +315,6 @@ def get_scheduled_time(message, poll_id, bot):
         bot.send_message(chat_id, "Неверный формат времени. Пожалуйста, введите время в формате ЧЧ-ММ:")
         bot.register_next_step_handler(message, get_scheduled_time, poll_id, bot)
 
-### ИЗМЕНЕНО ###
 def send_scheduled_poll(bot):
     now = datetime.datetime.now()
     current_time = now.strftime("%H-%M")
@@ -328,17 +323,15 @@ def send_scheduled_poll(bot):
     for poll_id, poll_data_items in poll_data.items():
         for item in poll_data_items:
             if item.get('scheduled_date') == current_date and item.get('scheduled_time') == current_time:
-                for admin_id in ADMIN_ID:  # Send to all admins
-                    create_and_send_poll(bot, admin_id, poll_id)  # Corrected function call
+                for admin_id in ADMIN_ID:  
+                    create_and_send_poll(bot, admin_id, poll_id)
                 logging.info(f"Опрос {poll_id} запланирован и отправлен.")
-                return # Stop at the first poll
-### ИЗМЕНЕНО ###
+                return
 def check_and_send_old_poll(bot):
     now = datetime.datetime.now()
     current_time = now.strftime("%H-%M")
     current_date = now.strftime("%d.%m")
 
-    # Find the earliest scheduled poll that hasn't been sent yet
     earliest_poll = None
     earliest_time = None
     earliest_poll_id = None
@@ -348,14 +341,11 @@ def check_and_send_old_poll(bot):
             scheduled_date = item.get('scheduled_date')
             scheduled_time = item.get('scheduled_time')
             if scheduled_date == current_date and scheduled_time > current_time:
-                # Convert scheduled_time to a datetime object for comparison
                 scheduled_datetime = datetime.datetime.strptime(scheduled_time, "%H-%M").time()
                 if earliest_time is None or scheduled_datetime < earliest_time:
                     earliest_time = scheduled_datetime
                     earliest_poll = item
                     earliest_poll_id = poll_id
-
-    # Send the earliest poll, if found
     if earliest_poll:
         for admin_id in ADMIN_ID:
             create_and_send_poll(bot, admin_id, earliest_poll_id)
@@ -382,10 +372,10 @@ def handle_poll_answer(bot, poll_answer):
 
 def get_latest_poll():
     loaded_polls = load_polls()
-    print(f"Loaded polls: {loaded_polls}")  # Add this
+    print(f"Loaded polls: {loaded_polls}") 
     latest_poll = None
     latest_created_at = None
-    latest_poll_id = None  # Added this
+    latest_poll_id = None  
     for poll_id, poll_list in loaded_polls.items():
         if poll_list and isinstance(poll_list, list) and len(poll_list) > 0:
             for poll_item in poll_list:
@@ -398,31 +388,38 @@ def get_latest_poll():
                     latest_created_at = created_at
                     latest_poll = poll_list 
                     latest_poll_id = poll_id
-    if latest_poll:  # Then you return as a dict.
-        print(f"Returning latest poll: {{'{latest_poll_id}': [{latest_poll}]}}")  # Add this
+    if latest_poll:  
+        print(f"Returning latest poll: {{'{latest_poll_id}': [{latest_poll}]}}")  
         return {latest_poll_id: latest_poll}
     return None
 
 def check_payments(bot, message):
     if is_admin(message):
         if awaiting_confirmation:
+
+            # Формируем текст со списком ожидающих оплат
             text = "Список ожидающих подтверждения оплат:\n"
+            bot.send_message(message.chat.id, "Список ожидающих подтверждения оплат:")
             for user_id, payment_info in awaiting_confirmation.items():
                 username = payment_info["username"]
                 total_price = payment_info["total_price"]
-
+                # Формируем сообщение с информацией о пользователе
                 admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
 
+                # Добавляем кнопку подтверждения для каждого пользователя
                 keyboard = types.InlineKeyboardMarkup()
-                confirm_button = types.InlineKeyboardButton(text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}",)
+                confirm_button = types.InlineKeyboardButton(
+                    text="Подтвердить оплату",
+                    callback_data=f"admin_confirm_{user_id}_{total_price}",
+                )
                 keyboard.add(confirm_button)
-                bot.register_next_step_handler(message,bot, confirm_payment)
                 bot.send_message(message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
-                # bot.register_next_step_handler(message,bot, confirm_payment)
         else:
+            # Если список пуст, отправляем сообщение об этом
             bot.send_message(message.chat.id, "Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
     else:
         bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
+
 
 def admin_confirm_payment(bot, call):
     admin_id = call.from_user.id
@@ -431,7 +428,9 @@ def admin_confirm_payment(bot, call):
         total_price = call.data.split("_")[3]
         chat_id = call.message.chat.id
         username = awaiting_confirmation[int(user_id)]["username"]
+
         del awaiting_confirmation[int(user_id)]
+        # Сохраняем информацию о подтвержденной оплате
         confirmed_payments[int(user_id)] = total_price
         bot.answer_callback_query(call.id, "Оплата подтверждена.")
         try:
@@ -447,9 +446,10 @@ def handle_callback_query(bot, call):
         callback_query(bot, call)
     elif call.data.startswith('poll_edit'):
         callback_query(bot, call)
-    elif call.data.startswith("admin_confirm_payment"):
+    elif call.data.startswith("admin_confirm_"):
         admin_confirm_payment(bot, call)
     elif call.data.startswith("confirm_payment_"):
+        print("handle_callback_query: Вызвана с confirm_payment_")
         confirm_payment(bot, call)
 
 def confirm_payment(bot, call):
@@ -457,10 +457,13 @@ def confirm_payment(bot, call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
     total_price = call.data.split("_")[-1]
+    print(f"confirm_payment: user_id={user_id}, chat_id={chat_id}, total_price={total_price}")
 
     if user_id in awaiting_confirmation:
         username = awaiting_confirmation[user_id]["username"]
         confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
+        print(f"confirm_payment: Найдено в awaiting_confirmation, username={username}, confirm_message_id={confirm_message_id}")
+
         try:
             bot.delete_message(chat_id, confirm_message_id)
         except Exception as e:
@@ -480,6 +483,7 @@ def confirm_payment(bot, call):
         for admin_id in ADMIN_ID:
             bot.send_message(admin_id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
     else:
+        print("confirm_payment: Не найдено в awaiting_confirmation")
         bot.send_message(chat_id, "Ошибка: Запрос на подтверждение не найден.")
         bot.answer_callback_query(call.id, "Произошла ошибка.")
 
