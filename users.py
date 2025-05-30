@@ -84,8 +84,8 @@ def help_command(bot, message):
     help_text = """
         Список команд:
         /start - начало работы с ботом
-        /status - проверка своего статуса оплаты
-        /voting - голосование за тренировки
+        /status - проверка своего статуса оплаты"),
+        /voting - голосование за тренировки"),
         /help - получение справки
         """
     bot.reply_to(message, help_text)
@@ -383,3 +383,4 @@ def handle_callback_query(bot, call):
         resend_payment(bot, call)
     elif call.data.startswith("re"):
         confirm_answers(bot, call)
+
