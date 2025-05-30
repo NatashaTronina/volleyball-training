@@ -316,40 +316,17 @@ def get_scheduled_time(message, poll_id, bot):
         bot.register_next_step_handler(message, get_scheduled_time, poll_id, bot)
 
 def send_scheduled_poll(bot):
+    current_time = datetime.datetime.now().strftime("%H-%M")
+    current_date = datetime.datetime.now().strftime("%d.%m")
     now = datetime.datetime.now()
-    current_time = now.strftime("%H-%M")
-    current_date = now.strftime("%d.%m")
 
-    for poll_id, poll_data_items in poll_data.items():
-        for item in poll_data_items:
-            if item.get('scheduled_date') == current_date and item.get('scheduled_time') == current_time:
-                for admin_id in ADMIN_ID:  
-                    create_and_send_poll(bot, admin_id, poll_id)
-                logging.info(f"Опрос {poll_id} запланирован и отправлен.")
-                return
-def check_and_send_old_poll(bot):
-    now = datetime.datetime.now()
-    current_time = now.strftime("%H-%M")
-    current_date = now.strftime("%d.%m")
+    for poll_id, poll_data_item in poll_data.items():
+        for option in poll_data_item:
+            scheduled_date = option.get('scheduled_date')
+            scheduled_time = option.get('scheduled_time')
 
-    earliest_poll = None
-    earliest_time = None
-    earliest_poll_id = None
-
-    for poll_id, poll_data_items in poll_data.items():
-        for item in poll_data_items:
-            scheduled_date = item.get('scheduled_date')
-            scheduled_time = item.get('scheduled_time')
-            if scheduled_date == current_date and scheduled_time > current_time:
-                scheduled_datetime = datetime.datetime.strptime(scheduled_time, "%H-%M").time()
-                if earliest_time is None or scheduled_datetime < earliest_time:
-                    earliest_time = scheduled_datetime
-                    earliest_poll = item
-                    earliest_poll_id = poll_id
-    if earliest_poll:
-        for admin_id in ADMIN_ID:
-            create_and_send_poll(bot, admin_id, earliest_poll_id)
-        logging.info(f"Отправлен самый ранний старый опрос {earliest_poll_id}.")
+            if scheduled_date == current_date and scheduled_time <= current_time:
+                create_and_send_poll(bot, None, poll_id)
 
 def handle_poll_answer(bot, poll_answer):
     user_id = poll_answer.user.id
@@ -490,7 +467,6 @@ def confirm_payment(bot, call):
 def schedule_poll(bot):
     while True:
         send_scheduled_poll(bot)
-        check_and_send_old_poll(bot)
         time.sleep(60)  # Проверять каждую минуту
 
 def start_poll_scheduler(bot):

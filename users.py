@@ -1,8 +1,6 @@
 import telebot
 from telebot import types
-import json
-import os
-from admin import load_polls, ADMIN_ID, is_admin
+from admin import load_polls
 import qrcode
 from io import BytesIO
 import datetime
@@ -21,28 +19,50 @@ def load_latest_poll():
     if not loaded_polls:
         return None
 
+    now = datetime.datetime.now()
+    current_time = now.strftime("%H-%M")
+    current_date = now.strftime("%d.%m")
+
+    eligible_polls = {}
+
+    for poll_id, poll_data in loaded_polls.items():
+        if isinstance(poll_data, list) and poll_data:
+            eligible_options = []
+            for option in poll_data:
+                try:
+                    scheduled_date = option.get('scheduled_date')
+                    scheduled_time = option.get('scheduled_time')
+
+                    # Сравниваем с текущим временем и датой
+                    if scheduled_date == current_date and scheduled_time <= current_time:
+                        eligible_options.append(option)
+                except (KeyError, ValueError, TypeError):
+                    continue
+
+            if eligible_options:
+                eligible_polls[poll_id] = eligible_options
+
+    # Находим последний опрос из отфильтрованных
     latest_poll_id = None
     latest_created_at = None
     latest_poll_data = None
 
-    for poll_id, poll_data in loaded_polls.items():
-        if isinstance(poll_data, list) and poll_data:
-            try:
-                created_at_str = poll_data[0].get('created_at')
-                created_at = datetime.datetime.fromisoformat(created_at_str)
-            except (KeyError, ValueError, TypeError):
-                continue
+    for poll_id, poll_data in eligible_polls.items():
+        try:
+            created_at_str = poll_data[0].get('created_at')
+            created_at = datetime.datetime.fromisoformat(created_at_str)
+        except (KeyError, ValueError, TypeError, IndexError):
+            continue
 
-            if latest_created_at is None or created_at > latest_created_at:
-                latest_created_at = created_at
-                latest_poll_id = poll_id
-                latest_poll_data = poll_data
+        if latest_created_at is None or created_at > latest_created_at:
+            latest_created_at = created_at
+            latest_poll_id = poll_id
+            latest_poll_data = poll_data
 
     if latest_poll_id:
         return {latest_poll_id: latest_poll_data}
     else:
         return None
-
 
 def users_start_command(bot, message):
     user_id = message.from_user.id
@@ -60,7 +80,6 @@ def users_start_command(bot, message):
     bot.set_my_commands(commands=default_commands, scope=telebot.types.BotCommandScopeChat(chat_id=message.chat.id))
 
     bot.send_message(message.chat.id, f"Привет, {first_name}! Для голосования за тренировки нажми команду /voting")
-
 
 def status(bot, message):
     user_id = message.from_user.id
@@ -157,14 +176,12 @@ def handle_poll_answer(bot, poll_answer):
                     text="Нет", callback_data=f"re_{poll_id_data}"
                 )
                 menu.add(confirm_yes_button, confirm_no_button)
-                # Store the sent poll message
                 poll_message = bot.send_message(user_id, f"Вы подтверждаете свои ответы?", reply_markup=menu)
 
                 user_confirmed[user_id] = True
-                # Save both confirmation and poll message IDs
                 message_ids[user_id] = {
-                    "confirm": poll_message.message_id,  # message_id of confirm message
-                    "poll": message_ids[user_id].get("poll")  # Keep the stored polling message id
+                    "confirm": poll_message.message_id,  
+                    "poll": message_ids[user_id].get("poll")  
                 }
 
         else:
