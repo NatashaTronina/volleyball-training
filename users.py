@@ -33,8 +33,7 @@ def load_latest_poll():
                     scheduled_date = option.get('scheduled_date')
                     scheduled_time = option.get('scheduled_time')
 
-                    # Сравниваем с текущим временем и датой
-                    if scheduled_date == current_date and scheduled_time <= current_time:
+                    if scheduled_date <= current_date and scheduled_time <= current_time:
                         eligible_options.append(option)
                 except (KeyError, ValueError, TypeError):
                     continue
@@ -42,7 +41,6 @@ def load_latest_poll():
             if eligible_options:
                 eligible_polls[poll_id] = eligible_options
 
-    # Находим последний опрос из отфильтрованных
     latest_poll_id = None
     latest_created_at = None
     latest_poll_data = None
@@ -140,7 +138,6 @@ def voting(bot, message):
            sent_poll = bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
            user_confirmed[message.from_user.id] = False
            message_ids[message.from_user.id] = message_ids.get(message.from_user.id, {})
-           # Ключ "poll" должен хранить именно message_id отправленного сообщения с опросом (sent_poll.message_id), а не poll_id
            message_ids[message.from_user.id]["poll"] = sent_poll.message_id
         except Exception as e:
             bot.send_message(chat_id, f"Не удалось создать опрос: {e}")
@@ -400,4 +397,3 @@ def handle_callback_query(bot, call):
         resend_payment(bot, call)
     elif call.data.startswith("re"):
         confirm_answers(bot, call)
-
