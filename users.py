@@ -7,21 +7,36 @@ import datetime
 import time
 import threading
 from shared_data import awaiting_confirmation, confirmed_payments
+from admin import load_polls
+import admin
 
 users = {}
 user_confirmed = {}
 message_ids = {}
 payment_timers = {}
 
+def load_latest_poll():
+    print ("Вызвана load_latest_poll")
+    loaded_polls = admin.load_polls() #  Тут поменял
+    print (f"load_latest_poll: loaded_polls = {loaded_polls}")
+
+def get_user_ids():
+    """Возвращает список ID всех пользователей."""
+    print (f"Вызвана get_user_ids, содержимое users = {users}")
+    return list(users.keys())
 
 def load_latest_poll():
-    loaded_polls = load_polls()
+    print ("Вызвана load_latest_poll")
+    loaded_polls = admin.load_polls() #  Тут поменял
+    print (f"load_latest_poll: loaded_polls = {loaded_polls}")
     if not loaded_polls:
+        print("load_latest_poll: Нет загруженных опросов.")
         return None
 
     now = datetime.datetime.now()
     current_time = now.strftime("%H-%M")
     current_date = now.strftime("%d.%m")
+    print (f"load_latest_poll: Текущее время {current_time}, текущая дата = {current_date}")
 
     eligible_polls = {}
 
@@ -32,8 +47,9 @@ def load_latest_poll():
                 try:
                     scheduled_date = option.get('scheduled_date')
                     scheduled_time = option.get('scheduled_time')
+                    print (f"load_latest_poll: poll_id = {poll_id}, scheduled_date = {scheduled_date}, scheduled_time = {scheduled_time}")
 
-                    if scheduled_date <= current_date and scheduled_time <= current_time:
+                    if scheduled_date <= current_date or (scheduled_date == current_date and scheduled_time <= current_time):
                         eligible_options.append(option)
                 except (KeyError, ValueError, TypeError):
                     continue
@@ -60,14 +76,18 @@ def load_latest_poll():
     if latest_poll_id:
         return {latest_poll_id: latest_poll_data}
     else:
+        print ("Не найдено подходящих опросов.")
         return None
 
 def users_start_command(bot, message):
+    global users
     user_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name
-
-    users[user_id] = username
+    
+    users[int(user_id)] = {"username": username, "chat_id": message.chat.id}
+    print(f"users_start_command: Пользователь {username} зарегистрирован, user_id={user_id}, chat_id={message.chat.id}")
+    print (f"Содержимое users = {users}")
 
     default_commands = [
         telebot.types.BotCommand("start", "Начать работу с ботом"),
@@ -177,8 +197,8 @@ def handle_poll_answer(bot, poll_answer):
 
                 user_confirmed[user_id] = True
                 message_ids[user_id] = {
-                    "confirm": poll_message.message_id,  
-                    "poll": message_ids[user_id].get("poll")  
+                    "confirm": poll_message.message_id,
+                    "poll": message_ids[user_id].get("poll")
                 }
 
         else:
@@ -203,7 +223,8 @@ def payment_timeout(bot, user_id, qr_info, total_price):
             except Exception as e:
                 print(f"Error deleting message: {e}")
 
-            bot.send_message(qr_info["chat_id"],"Вы не подтвердили оплату и реквизиты были удалены. Нажмите команду /voting для повторного голосования.",)
+            bot.send_message(qr_info["chat_id"],
+                            "Вы не подтвердили оплату и реквизиты были удалены. Нажмите команду /voting для повторного голосования.",)
             payment_timers.pop(user_id, None)
 
 
@@ -384,7 +405,6 @@ def confirm_answers(bot, call):
                     threading.Thread(
                         target=payment_timeout, args=(bot, user_id, qr_info, total_price)
                     ).start()
-
 
 def handle_callback_query(bot, call):
     if call.data.startswith("cancel_payment_"):
