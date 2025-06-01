@@ -2,15 +2,13 @@ import re
 import time
 import telebot
 from telebot import types
-import json
-import os
 import datetime
 import uuid
 from DATE import get_day_of_week
 from shared_data import awaiting_confirmation, confirmed_payments, save_polls, load_polls
 import threading
-import schedule  # Добавлен импорт
-from users import get_user_ids, users  # Импортируем get_user_ids и users
+import schedule  
+from users import get_user_ids, users
 
 ADMIN_ID = [494635818]
 poll_data = {}
@@ -46,7 +44,6 @@ def create_poll_command(bot, message):
         chat_id = message.chat.id
         poll_id = str(uuid.uuid4())
         latest_poll["id"] = poll_id
-        # poll_data = load_polls()
         poll_data[poll_id] = []
 
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
@@ -66,7 +63,6 @@ def get_date(message, poll_id, bot):
             return
 
         year = datetime.date.today().year
-        # poll_data = load_polls()
         if poll_id in poll_data:
             poll_data[poll_id].append({'date': date, 'day': day_name, 'year': year, 'created_at': datetime.datetime.now().isoformat()})
             save_polls(poll_data)
@@ -80,7 +76,6 @@ def get_time(message, poll_id, bot):
     time_input = message.text
     chat_id = message.chat.id
     if re.match(r"^\d{2}[:-]\d{2}$", time_input):
-        # poll_data = load_polls()
         if poll_id in poll_data and poll_data[poll_id]:
             poll_data[poll_id][-1]['time'] = time_input
             save_polls(poll_data)
@@ -97,7 +92,6 @@ def get_training_type(message, poll_id, bot):
     training_type = message.text
     chat_id = message.chat.id
     if training_type in ["Игровая", "Техническая"]:
-        # poll_data = load_polls()
         if poll_id in poll_data and poll_data[poll_id]:
             poll_data[poll_id][-1]['training_type'] = training_type
             save_polls(poll_data)
@@ -117,7 +111,6 @@ def get_price(message, poll_id, bot):
 
     try:
         price = int(price)
-        # poll_data = load_polls()
         if poll_id in poll_data and poll_data[poll_id]:
             poll_data[poll_id][-1]['price'] = price
             save_polls(poll_data)
@@ -135,7 +128,6 @@ def get_location(message, poll_id, bot):
     chat_id = message.chat.id
 
     if location in ["Гимназия", "Энергия"]:
-        # poll_data = load_polls()
         if poll_id in poll_data and poll_data[poll_id]:
             poll_data[poll_id][-1]['location'] = location
             save_polls(poll_data)
@@ -159,7 +151,6 @@ def handle_comment_choice(message, poll_id, bot):
         bot.send_message(message.chat.id, "Введите комментарий к тренировке:")
         bot.register_next_step_handler(message, get_comment, poll_id, bot)
     elif choice == "Пропустить":
-        # poll_data = load_polls()
         if poll_id in poll_data and poll_data[poll_id]:
             poll_data[poll_id][-1]['comment'] = ""
             save_polls(poll_data)
@@ -174,7 +165,6 @@ def handle_comment_choice(message, poll_id, bot):
 def get_comment(message, poll_id, bot):
     comment = message.text
     chat_id = message.chat.id
-    # poll_data = load_polls()
     if poll_id in poll_data and poll_data[poll_id]:
         poll_data[poll_id][-1]['comment'] = comment
         save_polls(poll_data)
@@ -196,7 +186,6 @@ def next_action(message, poll_id, bot):
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных")
         
 def create_and_send_poll(bot, chat_id, poll_id):
-    print(f"create_and_send_poll: Вызов функции для chat_id = {chat_id}, poll_id = {poll_id}")
     options = []
     if poll_id in poll_data:
         for option in poll_data[poll_id]:
@@ -218,11 +207,9 @@ def create_and_send_poll(bot, chat_id, poll_id):
         question = "Волейбол - выберите подходящий вариант:"
 
         try:
-            # Получаем список user_ids
             user_ids = get_user_ids()
-            user_ids = [int(user_id) for user_id in user_ids] #  Вот тут
+            user_ids = [int(user_id) for user_id in user_ids] 
 
-            # Отправляем опрос каждому пользователю
             for user_id in user_ids:
                 try:
                     user_info = users.get(user_id)
@@ -235,10 +222,6 @@ def create_and_send_poll(bot, chat_id, poll_id):
                         poll_results[user_id] = {'voted': False, 'poll_id': poll_id_sent}
                         latest_poll = {}
                         latest_poll["id"] = poll_id
-                        print(
-                            f"create_and_send_poll: Опрос успешно отправлен пользователю {user_id} в чат {chat_id}")
-                    else:
-                        print(f"create_and_send_poll: Не удалось получить chat_id для пользователя {user_id}")
 
                 except telebot.apihelper.ApiTelegramException as e:
                     print(
@@ -260,7 +243,6 @@ def callback_query(bot, call):
 
     elif callback_data.startswith('poll_edit'):
         bot.send_message(chat_id, "Начинаем пересоздание опроса...")
-        # poll_data = load_polls()
         if poll_id in poll_data:
             poll_data[poll_id].clear()
             save_polls(poll_data)
@@ -270,8 +252,6 @@ def callback_query(bot, call):
 def save_sbp_link_to_all(message, poll_id, bot):
     sbp_link = message.text.strip()
     chat_id = message.chat.id
-
-    # poll_data = load_polls()
     if poll_id in poll_data:
         for item in poll_data[poll_id]:
             item['payment_link'] = sbp_link
@@ -285,7 +265,6 @@ def get_scheduled_date(message, poll_id, bot):
     date = message.text
     chat_id = message.chat.id
     if re.match(r"^\d{2}\.\d{2}$", date):
-        # Проверяем, существует ли опрос с данным poll_id
         if poll_id in poll_data:
             for item in poll_data[poll_id]:
                 item['scheduled_date'] = date
@@ -303,8 +282,7 @@ def get_scheduled_time(message, poll_id, bot):
     time_input = message.text
     chat_id = message.chat.id
     if re.match(r"^\d{2}[:-]\d{2}$", time_input):
-        # Заменяем "-" на ":"
-        scheduled_time = time_input.replace("-", ":")  # Изменяем формат времени
+        scheduled_time = time_input.replace("-", ":") 
         poll_data = load_polls()
         if poll_id in poll_data and poll_data[poll_id]:
             for item in poll_data[poll_id]:
@@ -318,33 +296,28 @@ def get_scheduled_time(message, poll_id, bot):
 
 def schedule_the_poll(bot, poll_id, scheduled_time):
     def send_poll_job():
-        print(f"schedule_the_poll: Вызов send_poll_job для poll_id = {poll_id}")
-        create_and_send_poll(bot, ADMIN_ID[0], poll_id)  # Передаем chat_id
-    print(f"schedule_the_poll: Планируется опрос {poll_id} на {scheduled_time}")
-    schedule.every().day.at(scheduled_time).do(send_poll_job)
-    print(f"schedule_the_poll: Опрос {poll_id} запланирован на {scheduled_time}")
+        create_and_send_poll(bot, ADMIN_ID[0], poll_id)  
+    schedule.every().day.at(scheduled_time).do(send_poll_job) 
 
-    schedule.every().day.at(scheduled_time).do(send_poll_job)
-    print(f"schedule_the_poll: Poll {poll_id} is scheduled for {scheduled_time}")
+
+
+
 
 def send_scheduled_poll(bot):
     current_time = datetime.datetime.now().strftime("%H-%M")
     current_date = datetime.datetime.now().strftime("%d.%m")
-    print(f"send_scheduled_poll: Проверка расписания. Текущее время = {current_time}, текущая дата = {current_date}")
 
     for poll_id, poll_data_item in poll_data.items():
-        print(f"send_scheduled_poll: poll_id = {poll_id}, poll_data_item = {poll_data_item}")
+
         for option in poll_data_item:
             scheduled_date = option.get('scheduled_date')
             scheduled_time = option.get('scheduled_time')
-            print(f"send_scheduled_poll: scheduled_date = {scheduled_date}, scheduled_time = {scheduled_time}")
 
-            if scheduled_date == current_date and scheduled_time <= current_time:  #  Изменил условие
-                print(f"send_scheduled_poll: Условие выполнено! Отправка опроса {poll_id}")
+
+            if scheduled_date == current_date and scheduled_time <= current_time:  
+
                 create_and_send_poll(bot, ADMIN_ID[0], poll_id)
-            else:
-                print(f"send_scheduled_poll: Условие НЕ выполнено. scheduled_date == current_date is {scheduled_date == current_date}, scheduled_time <= current_time is {scheduled_time <= current_time}")
-
+            
 def handle_poll_answer(bot, poll_answer):
     user_id = poll_answer.user.id
     poll_id = poll_answer.poll_id
@@ -353,9 +326,7 @@ def handle_poll_answer(bot, poll_answer):
     if poll_id not in poll_results:
         poll_results[poll_id] = {'total_votes': 0, 'options': {}}
     if user_id not in poll_results.get('users', {}):
-        # Увеличиваем общее количество голосов за poll_id
         poll_results[poll_id]['total_votes'] += 1
-        # Регистрируем пользователя как проголосовавшего (внутри poll_results или в отдельном словаре)
         if 'users' not in poll_results:
             poll_results['users'] = {}
         poll_results['users'][user_id] = poll_id
@@ -366,7 +337,6 @@ def handle_poll_answer(bot, poll_answer):
 
 def get_latest_poll():
     loaded_polls = load_polls()
-    print(f"Loaded polls: {loaded_polls}") 
     latest_poll = None
     latest_created_at = None
     latest_poll_id = None  
@@ -383,24 +353,20 @@ def get_latest_poll():
                     latest_poll = poll_list 
                     latest_poll_id = poll_id
     if latest_poll:  
-        print(f"Returning latest poll: {{'{latest_poll_id}': [{latest_poll}]}}")  
         return {latest_poll_id: latest_poll}
     return None
 
 def check_payments(bot, message):
     if is_admin(message):
         if awaiting_confirmation:
-
-            # Формируем текст со списком ожидающих оплат
             text = "Список ожидающих подтверждения оплат:\n"
             bot.send_message(message.chat.id, "Список ожидающих подтверждения оплат:")
             for user_id, payment_info in awaiting_confirmation.items():
                 username = payment_info["username"]
                 total_price = payment_info["total_price"]
-                # Формируем сообщение с информацией о пользователе
                 admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
 
-                # Добавляем кнопку подтверждения для каждого пользователя
+
                 keyboard = types.InlineKeyboardMarkup()
                 confirm_button = types.InlineKeyboardButton(
                     text="Подтвердить оплату",
@@ -409,7 +375,6 @@ def check_payments(bot, message):
                 keyboard.add(confirm_button)
                 bot.send_message(message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
         else:
-            # Если список пуст, отправляем сообщение об этом
             bot.send_message(message.chat.id, "Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
     else:
         bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
@@ -423,7 +388,6 @@ def admin_confirm_payment(bot, call):
         username = awaiting_confirmation[int(user_id)]["username"]
 
         del awaiting_confirmation[int(user_id)]
-        # Сохраняем информацию о подтвержденной оплате
         confirmed_payments[int(user_id)] = total_price
         bot.answer_callback_query(call.id, "Оплата подтверждена.")
         try:
@@ -442,20 +406,17 @@ def handle_callback_query(bot, call):
     elif call.data.startswith("admin_confirm_"):
         admin_confirm_payment(bot, call)
     elif call.data.startswith("confirm_payment_"):
-        print("handle_callback_query: Вызвана с confirm_payment_")
         confirm_payment(bot, call)
 
 def confirm_payment(bot, call):
-    print("confirm_payment: Функция вызвана!")
     user_id = call.from_user.id
     chat_id = call.message.chat.id
     total_price = call.data.split("_")[-1]
-    print(f"confirm_payment: user_id={user_id}, chat_id={chat_id}, total_price={total_price}")
+
 
     if user_id in awaiting_confirmation:
         username = awaiting_confirmation[user_id]["username"]
         confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
-        print(f"confirm_payment: Найдено в awaiting_confirmation, username={username}, confirm_message_id={confirm_message_id}")
 
         try:
             bot.delete_message(chat_id, confirm_message_id)
@@ -464,7 +425,6 @@ def confirm_payment(bot, call):
 
         del awaiting_confirmation[user_id]
 
-        # Формируем сообщение с кликабельным именем пользователя
         admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
 
         keyboard = types.InlineKeyboardMarkup()
@@ -476,22 +436,21 @@ def confirm_payment(bot, call):
         for admin_id in ADMIN_ID:
             bot.send_message(admin_id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
     else:
-        print("confirm_payment: Не найдено в awaiting_confirmation")
         bot.send_message(chat_id, "Ошибка: Запрос на подтверждение не найден.")
         bot.answer_callback_query(call.id, "Произошла ошибка.")
 
 def schedule_poll(bot):
     while True:
         send_scheduled_poll(bot)
-        time.sleep(60)  # Проверять каждую минуту
+        time.sleep(60) 
 
 def start_poll_scheduler(bot):
     def run_scheduler():
         while True:
             try:
-                schedule.run_pending() #Проверяем, есть ли задачи для выполнения
+                schedule.run_pending()
             except Exception as e:
                 print(f"Произошла ошибка в планировщике: {e}")
-            time.sleep(60)  # Проверять каждую минуту
+            time.sleep(60) 
 
     threading.Thread(target=run_scheduler, daemon=True).start()
