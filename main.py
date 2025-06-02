@@ -56,9 +56,10 @@ def handle_admin_commands(message):
 def handle_callback_query(call):
     if call.data.startswith("admin_confirm_"):
         admin.admin_confirm_payment(bot, call)  
+    elif call.data.startswith("poll_confirm") or call.data.startswith("poll_edit"):
+        admin.handle_poll_confirmation(bot, call) 
     else:
         users.handle_callback_query(bot, call)
-
 
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):

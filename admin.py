@@ -231,24 +231,6 @@ def create_and_send_poll(bot, chat_id, poll_id):
     else:
         bot.send_message(ADMIN_ID[0], "Нет данных для создания опроса.")
 
-def callback_query(bot, call):
-    chat_id = call.message.chat.id
-    callback_data = call.data
-
-    poll_id = callback_data.split('_')[2]
-
-    if callback_data.startswith('poll_correct'):
-        bot.send_message(chat_id, "Опрос подтвержден. Пожалуйста, введите дату для отправки опроса в формате ДД.ММ:")
-        bot.register_next_step_handler(call.message, get_scheduled_date, poll_id, bot)
-
-    elif callback_data.startswith('poll_edit'):
-        bot.send_message(chat_id, "Начинаем пересоздание опроса...")
-        if poll_id in poll_data:
-            poll_data[poll_id].clear()
-            save_polls(poll_data)
-        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
-        bot.register_next_step_handler(call.message, get_date, poll_id, bot)
-
 def save_sbp_link_to_all(message, poll_id, bot):
     sbp_link = message.text.strip()
     chat_id = message.chat.id
@@ -283,24 +265,46 @@ def get_scheduled_time(message, poll_id, bot):
     chat_id = message.chat.id
     if re.match(r"^\d{2}[:-]\d{2}$", time_input):
         scheduled_time = time_input.replace("-", ":") 
-        poll_data = load_polls()
         if poll_id in poll_data and poll_data[poll_id]:
             for item in poll_data[poll_id]:
                 item['scheduled_time'] = scheduled_time
             save_polls(poll_data)
-        schedule_the_poll(bot, poll_id, scheduled_time)
-        bot.send_message(chat_id, "Расписание успешно установлено!")
+
+        # Prepare the options for confirmation
+        options = []
+        for option in poll_data[poll_id]:
+            date = option.get('date', 'Не указана')
+            day = option.get('day', 'Не указана')
+            time = option.get('time', 'Не указано')
+            training_type = option.get('training_type', 'Не указано')
+            price = option.get('price', 'Не указана')
+            location = option.get('location', 'Не указана')
+            comment = option.get('comment', '')
+
+            if date != 'Не указана' and day != 'Не указана' and time != 'Не указана':
+                option_string = f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}"
+                options.append(option_string)
+
+        # Create the confirmation message
+        confirmation_message = f"Вы подтверждаете опрос с расписанием на {date} в {scheduled_time}?\n\n"
+        confirmation_message += "\n".join(options)
+        
+        # Create confirmation buttons
+        keyboard = types.InlineKeyboardMarkup()
+        button_correct = types.InlineKeyboardButton(text="Подтверждаю", callback_data=f'poll_confirm_{poll_id}')
+        button_edit = types.InlineKeyboardButton(text="Не подтверждаю", callback_data=f'poll_edit_{poll_id}')
+        keyboard.add(button_correct, button_edit)
+
+        bot.send_message(chat_id, confirmation_message, reply_markup=keyboard)
     else:
         bot.send_message(chat_id, "Неверный формат времени. Пожалуйста, введите время в формате ЧЧ-ММ:")
         bot.register_next_step_handler(message, get_scheduled_time, poll_id, bot)
+
 
 def schedule_the_poll(bot, poll_id, scheduled_time):
     def send_poll_job():
         create_and_send_poll(bot, ADMIN_ID[0], poll_id)  
     schedule.every().day.at(scheduled_time).do(send_poll_job) 
-
-
-
 
 
 def send_scheduled_poll(bot):
@@ -379,6 +383,31 @@ def check_payments(bot, message):
     else:
         bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
 
+def handle_poll_confirmation(bot, call):
+    chat_id = call.message.chat.id
+    callback_data = call.data
+    poll_id = callback_data.split('_')[2]
+
+    if callback_data.startswith('poll_confirm'):
+        bot.send_message(chat_id, "Опрос подтвержден. Расписание установлено.")
+        scheduled_time = poll_data[poll_id][0].get('scheduled_time')
+        scheduled_date = poll_data[poll_id][0].get('scheduled_date')
+        
+        if scheduled_time and scheduled_date:
+            schedule_the_poll(bot, poll_id, scheduled_time)  # Schedule the poll
+        else:
+            bot.send_message(chat_id, "Ошибка: Не установлены дата или время для отправки опроса.")
+
+    elif callback_data.startswith('poll_edit'):
+        bot.send_message(chat_id, "Начинаем пересоздание опроса...")
+        if poll_id in poll_data:
+            poll_data[poll_id].clear()
+            save_polls(poll_data)
+        bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
+        bot.register_next_step_handler(call.message, get_date, poll_id, bot)
+
+
+
 def admin_confirm_payment(bot, call):
     admin_id = call.from_user.id
     if admin_id in ADMIN_ID:
@@ -399,10 +428,8 @@ def admin_confirm_payment(bot, call):
         bot.answer_callback_query(call.id, "Нет прав.")
 
 def handle_callback_query(bot, call):
-    if call.data.startswith('poll_correct'):
-        callback_query(bot, call)
-    elif call.data.startswith('poll_edit'):
-        callback_query(bot, call)
+    if call.data.startswith('poll_confirm') or call.data.startswith('poll_edit'):
+        handle_poll_confirmation(bot, call)
     elif call.data.startswith("admin_confirm_"):
         admin_confirm_payment(bot, call)
     elif call.data.startswith("confirm_payment_"):

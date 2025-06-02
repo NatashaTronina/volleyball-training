@@ -67,7 +67,6 @@ def load_latest_poll():
     if latest_poll_id:
         return {latest_poll_id: latest_poll_data}
     else:
-        print("Не найдено подходящих опросов.")
         return None
 
 
