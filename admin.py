@@ -302,10 +302,16 @@ def get_scheduled_time(message, poll_id, bot):
 
 
 def schedule_the_poll(bot, poll_id, scheduled_time):
-    def send_poll_job():
-        create_and_send_poll(bot, ADMIN_ID[0], poll_id)  
-    schedule.every().day.at(scheduled_time).do(send_poll_job) 
+    poll_sent = False
 
+    def send_poll_job():
+        nonlocal poll_sent  
+        if not poll_sent: 
+            create_and_send_poll(bot, ADMIN_ID[0], poll_id)
+            poll_sent = True 
+
+    # Запланировать задачу на указанное время
+    schedule.every().day.at(scheduled_time).do(send_poll_job)
 
 def send_scheduled_poll(bot):
     current_time = datetime.datetime.now().strftime("%H-%M")
@@ -405,7 +411,6 @@ def handle_poll_confirmation(bot, call):
             save_polls(poll_data)
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(call.message, get_date, poll_id, bot)
-
 
 
 def admin_confirm_payment(bot, call):

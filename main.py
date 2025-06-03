@@ -14,11 +14,8 @@ TOKEN = config_data.get("token")
 
 bot = telebot.TeleBot(TOKEN)
 
-
 admin.poll_data = load_polls()
-
 admin.set_commands(bot)
-
 
 @bot.message_handler(commands=['start'])
 def handle_start(message):
@@ -26,7 +23,6 @@ def handle_start(message):
         admin.admin_start_command(bot, message)
     else:
         users.users_start_command(bot, message)
-
 
 @bot.message_handler(commands=['help', 'status', 'voting'])
 def handle_user_other_commands(message):
@@ -55,9 +51,9 @@ def handle_admin_commands(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     if call.data.startswith("admin_confirm_"):
-        admin.admin_confirm_payment(bot, call)  
+        admin.admin_confirm_payment(bot, call)
     elif call.data.startswith("poll_confirm") or call.data.startswith("poll_edit"):
-        admin.handle_poll_confirmation(bot, call) 
+        admin.handle_poll_confirmation(bot, call)
     else:
         users.handle_callback_query(bot, call)
 
@@ -65,8 +61,13 @@ def handle_callback_query(call):
 def handle_poll_answer(poll_answer):
     users.handle_poll_answer(bot, poll_answer)
 
+# Добавляем обработчик текстовых сообщений
+@bot.message_handler(func=lambda message: True)  # Обрабатывает все текстовые сообщения
+def handle_all_text_messages(message):
+    # Предполагаем, что handle_name_input находится в users.py
+    users.handle_name_input(bot, message)  # Передаем управление в users.py
 
 if __name__ == '__main__':
     print("Бот запущен")
-    admin.start_poll_scheduler(bot)  
+    admin.start_poll_scheduler(bot)
     threading.Thread(target=bot.polling, kwargs={'none_stop': True}).start()

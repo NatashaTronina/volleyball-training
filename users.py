@@ -8,6 +8,7 @@ import time
 import threading
 from shared_data import awaiting_confirmation, confirmed_payments
 import admin
+from ggl import write_name_to_google_sheet, authenticate_google_sheets
 
 users = {}
 user_confirmed = {}
@@ -69,6 +70,7 @@ def load_latest_poll():
     else:
         return None
 
+client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json')
 
 def users_start_command(bot, message):
     global users
@@ -86,7 +88,23 @@ def users_start_command(bot, message):
     ]
     bot.set_my_commands(commands=default_commands, scope=telebot.types.BotCommandScopeChat(chat_id=message.chat.id))
 
-    bot.send_message(message.chat.id, f"Привет, {first_name}! Для голосования за тренировки нажми команду /voting")
+    bot.send_message(message.chat.id, f"Привет, {first_name}! Введите ваше полное имя и фамилию в формате 'Иван Иванов'")
+    
+    # Устанавливаем флаг ожидания
+    users[user_id]['awaiting_name'] = True
+
+def handle_name_input(bot, message):
+    user_id = message.from_user.id
+    if user_id in users and users[user_id].get('awaiting_name'):
+        global full_name
+        full_name = message.text.strip()
+        print(f"handle_name_input: Получено имя: {full_name}, user_id: {user_id}") # Log 1
+        # Записываем имя в Google таблицу
+        write_name_to_google_sheet(client, "Тренировки", full_name, user_id)
+        # Удаляем флаг ожидания
+        users[user_id]['awaiting_name'] = False
+        bot.send_message(message.chat.id, f"Спасибо, {full_name}! Ваше имя и фамилия сохранены. Для голосования используйте команду /voting")
+        print(f"handle_name_input: Обработка завершена для {full_name}, user_id: {user_id}") # Log 2
 
 def status(bot, message):
     user_id = message.from_user.id
