@@ -136,41 +136,43 @@ def help_command(bot, message):
 
 
 def voting(bot, message):
+    user_id = message.from_user.id
     chat_id = message.chat.id
     latest_poll = load_latest_poll()
+    if user_id in users:
+        if latest_poll:
+            poll_id, poll_data_item = list(latest_poll.items())[0]
 
-    if latest_poll:
-        poll_id, poll_data_item = list(latest_poll.items())[0]
+            question = "Волейбол - выберите подходящий вариант:"
 
-        question = "Волейбол - выберите подходящий вариант:"
+            options = []
+            if isinstance(poll_data_item, list):
+                for option in poll_data_item:
+                    if isinstance(option, dict):
+                        date = option.get('date', 'Не указана')
+                        day = option.get('day', 'Не указано')
+                        time = option.get('time', 'Не указано')
+                        training_type = option.get('training_type', 'Не указано')
+                        price = option.get('price', 0)
+                        location = option.get('location', 'Не указано')
+                        comment = option.get('comment', '')
+                        option_string = f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}"
+                        if len(option_string) > 90:
+                            option_string = option_string[:87] + "..."
+                        options.append(option_string)
 
-        options = []
-        if isinstance(poll_data_item, list):
-            for option in poll_data_item:
-                if isinstance(option, dict):
-                    date = option.get('date', 'Не указана')
-                    day = option.get('day', 'Не указано')
-                    time = option.get('time', 'Не указано')
-                    training_type = option.get('training_type', 'Не указано')
-                    price = option.get('price', 0)
-                    location = option.get('location', 'Не указано')
-                    comment = option.get('comment', '')
-                    option_string = f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}"
-                    if len(option_string) > 90:
-                        option_string = option_string[:87] + "..."
-                    options.append(option_string)
-
-        options.append("Не пойду на волейбол")
-        try:
-           sent_poll = bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
-           user_confirmed[message.from_user.id] = False
-           message_ids[message.from_user.id] = message_ids.get(message.from_user.id, {})
-           message_ids[message.from_user.id]["poll"] = sent_poll.message_id
-        except Exception as e:
-            bot.send_message(chat_id, f"Не удалось создать опрос: {e}")
+            options.append("Не пойду на волейбол")
+            try:
+                sent_poll = bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
+                user_confirmed[message.from_user.id] = False
+                message_ids[message.from_user.id] = message_ids.get(message.from_user.id, {})
+                message_ids[message.from_user.id]["poll"] = sent_poll.message_id
+            except Exception as e:
+                bot.send_message(chat_id, f"Не удалось создать опрос: {e}")
+        else:
+            bot.send_message(message.chat.id, "Нет доступных опросов.")
     else:
-        bot.send_message(message.chat.id, "Нет доступных опросов.")
-
+        bot.reply_to(message, "Пожалуйста, сначала используйте команду /start, чтобы зарегистрироваться.")
 
 def handle_poll_answer(bot, poll_answer):
     user_id = poll_answer.user.id
