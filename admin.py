@@ -368,26 +368,34 @@ def get_latest_poll():
 
 def check_payments(bot, message):
     if is_admin(message):
+        # Логируем содержимое awaiting_confirmation
+        print("Содержимое awaiting_confirmation:", awaiting_confirmation)
+
         if awaiting_confirmation:
             text = "Список ожидающих подтверждения оплат:\n"
-            bot.send_message(message.chat.id, "Список ожидающих подтверждения оплат:")
+            bot.send_message(message.chat.id, text)
             for user_id, payment_info in awaiting_confirmation.items():
-                username = payment_info["username"]
+                # Извлекаем имя пользователя из вложенного словаря
+                username = payment_info["username"]["username"]  # Изменено здесь
                 total_price = payment_info["total_price"]
+                
+                # Создаем кликабельную ссылку на пользователя
                 admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
-
-
+                
+                # Отправляем сообщение админу с кликабельной ссылкой
                 keyboard = types.InlineKeyboardMarkup()
                 confirm_button = types.InlineKeyboardButton(
-                    text="Подтвердить оплату",
-                    callback_data=f"admin_confirm_{user_id}_{total_price}",
+                    text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}"
                 )
                 keyboard.add(confirm_button)
+
+                # Отправляем сообщение с кликабельным именем
                 bot.send_message(message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
         else:
             bot.send_message(message.chat.id, "Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
     else:
         bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
+
 
 def handle_poll_confirmation(bot, call):
     chat_id = call.message.chat.id
@@ -445,9 +453,8 @@ def confirm_payment(bot, call):
     chat_id = call.message.chat.id
     total_price = call.data.split("_")[-1]
 
-
     if user_id in awaiting_confirmation:
-        username = awaiting_confirmation[user_id]["username"]
+        full_name = awaiting_confirmation[user_id]["full_name"]
         confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
 
         try:
@@ -457,7 +464,8 @@ def confirm_payment(bot, call):
 
         del awaiting_confirmation[user_id]
 
-        admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
+        # Отправка сообщения админу с кликабельным именем пользователя
+        admin_message = f"Пользователь [{full_name}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
 
         keyboard = types.InlineKeyboardMarkup()
         confirm_button = types.InlineKeyboardButton(

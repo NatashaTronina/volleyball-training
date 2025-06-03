@@ -18,17 +18,13 @@ def authenticate_google_sheets(json_file):
         return None  # Return None to signal failure
 
 def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
-    """Ищет в двух листах таблицы ФИО full_name и записывает user_id в ячейку справа от найденного имени."""
-    print(f"write_name_to_google_sheet: Начало работы, full_name: {full_name}, user_id: {user_id}") # Log 1
     if client is None:
-        print("write_name_to_google_sheet: Не удалось подключиться к Google Sheets.")
         return
     try:
         sheet = client.open(spreadsheet_name)
         sheets_to_check = ["В.Расход", "В.Приход"]  # Листы для проверки
 
         for sheet_name in sheets_to_check:
-            print(f"write_name_to_google_sheet: Проверка листа '{sheet_name}'") # Log 3
             try:
                 worksheet = sheet.worksheet(sheet_name)
                 cell = worksheet.find(full_name)  # Поиск имени
@@ -36,7 +32,6 @@ def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
                     print(f"write_name_to_google_sheet: Найдено имя '{full_name}' в листе '{sheet_name}' в строке {cell.row}, столбце {cell.col}") # Log 4
                     try:
                         worksheet.update_cell(cell.row, cell.col + 1, str(user_id))  # Запись user_id
-                        print(f"Записан user_id {user_id} для '{full_name}' в листе '{sheet_name}'")
                     except Exception as e:
                         print(f"write_name_to_google_sheet: Не удалось обновить ячейку для '{full_name}' в листе '{sheet_name}': {e}")
             except gspread.exceptions.CellNotFound:
