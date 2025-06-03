@@ -369,8 +369,6 @@ def get_latest_poll():
 def check_payments(bot, message):
     if is_admin(message):
         # Логируем содержимое awaiting_confirmation
-        print("Содержимое awaiting_confirmation:", awaiting_confirmation)
-
         if awaiting_confirmation:
             text = "Список ожидающих подтверждения оплат:\n"
             bot.send_message(message.chat.id, text)
@@ -454,7 +452,7 @@ def confirm_payment(bot, call):
     total_price = call.data.split("_")[-1]
 
     if user_id in awaiting_confirmation:
-        full_name = awaiting_confirmation[user_id]["full_name"]
+        full_name = awaiting_confirmation[user_id]["username"]["username"]
         confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
 
         try:
