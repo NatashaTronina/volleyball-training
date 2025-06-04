@@ -7,7 +7,9 @@ from admin import is_admin, admin_confirm_payment
 from users import handle_poll_answer as users_handle_poll_answer
 from users import handle_callback_query as users_handle_callback_query
 from shared_data import load_polls
+from ggl import authenticate_google_sheets
 
+client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json')
 with open('config.json', 'r') as file:
     config_data = json.load(file)
 TOKEN = config_data.get("token")
@@ -51,7 +53,8 @@ def handle_admin_commands(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     if call.data.startswith("admin_confirm_"):
-        admin.admin_confirm_payment(bot, call)
+        print(f"Received admin confirmation callback: {call.data}")  # Debug print
+        admin.admin_confirm_payment(bot, call, client)  # Pass the client here
     elif call.data.startswith("poll_confirm") or call.data.startswith("poll_edit"):
         admin.handle_poll_confirmation(bot, call)
     else:
@@ -64,7 +67,6 @@ def handle_poll_answer(poll_answer):
 # Добавляем обработчик текстовых сообщений
 @bot.message_handler(func=lambda message: True)  # Обрабатывает все текстовые сообщения
 def handle_all_text_messages(message):
-    # Предполагаем, что handle_name_input находится в users.py
     users.handle_name_input(bot, message)  # Передаем управление в users.py
 
 if __name__ == '__main__':

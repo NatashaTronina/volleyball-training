@@ -9,6 +9,7 @@ from shared_data import awaiting_confirmation, confirmed_payments, save_polls, l
 import threading
 import schedule  
 from users import get_user_ids, users
+from ggl import record_payment, authenticate_google_sheets
 
 ADMIN_ID = [494635818]
 poll_data = {}
@@ -419,7 +420,10 @@ def handle_poll_confirmation(bot, call):
         bot.register_next_step_handler(call.message, get_date, poll_id, bot)
 
 
-def admin_confirm_payment(bot, call):
+client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json')
+
+
+def admin_confirm_payment(bot, call, client):
     admin_id = call.from_user.id
     if admin_id in ADMIN_ID:
         user_id = call.data.split("_")[2]
@@ -427,11 +431,20 @@ def admin_confirm_payment(bot, call):
         chat_id = call.message.chat.id
         username = awaiting_confirmation[int(user_id)]["username"]
 
+        print(f"Admin {admin_id} confirmed payment for user {user_id} with total price {total_price}.")  # Debug print
+
         del awaiting_confirmation[int(user_id)]
         confirmed_payments[int(user_id)] = total_price
         bot.answer_callback_query(call.id, "Оплата подтверждена.")
+
+        # Запись даты и суммы в таблицу
+        print(f"Recording payment for user {user_id} with total price {total_price}.")  # Debug print
+        record_payment(client, "Тренировки", user_id, total_price)
+
+        # Удаляем сообщение сразу после успешной записи
         try:
             bot.delete_message(call.message.chat.id, call.message.message_id)
+            print("Сообщение подтверждения удалено.")  # Debug print
         except Exception as e:
             print(f"Ошибка удаления сообщения подтверждения: {e}")
     else:
