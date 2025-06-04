@@ -431,20 +431,16 @@ def admin_confirm_payment(bot, call, client):
         chat_id = call.message.chat.id
         username = awaiting_confirmation[int(user_id)]["username"]
 
-        print(f"Admin {admin_id} confirmed payment for user {user_id} with total price {total_price}.")  # Debug print
-
         del awaiting_confirmation[int(user_id)]
         confirmed_payments[int(user_id)] = total_price
         bot.answer_callback_query(call.id, "Оплата подтверждена.")
 
         # Запись даты и суммы в таблицу
-        print(f"Recording payment for user {user_id} with total price {total_price}.")  # Debug print
         record_payment(client, "Тренировки", user_id, total_price)
 
         # Удаляем сообщение сразу после успешной записи
         try:
             bot.delete_message(call.message.chat.id, call.message.message_id)
-            print("Сообщение подтверждения удалено.")  # Debug print
         except Exception as e:
             print(f"Ошибка удаления сообщения подтверждения: {e}")
     else:

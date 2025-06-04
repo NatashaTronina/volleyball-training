@@ -53,7 +53,6 @@ def handle_admin_commands(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     if call.data.startswith("admin_confirm_"):
-        print(f"Received admin confirmation callback: {call.data}")  # Debug print
         admin.admin_confirm_payment(bot, call, client)  # Pass the client here
     elif call.data.startswith("poll_confirm") or call.data.startswith("poll_edit"):
         admin.handle_poll_confirmation(bot, call)

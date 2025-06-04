@@ -98,13 +98,11 @@ def handle_name_input(bot, message):
     if user_id in users and users[user_id].get('awaiting_name'):
         global full_name
         full_name = message.text.strip()
-        print(f"handle_name_input: Получено имя: {full_name}, user_id: {user_id}") # Log 1
         # Записываем имя в Google таблицу
         write_name_to_google_sheet(client, "Тренировки", full_name, user_id)
         # Удаляем флаг ожидания
         users[user_id]['awaiting_name'] = False
         bot.send_message(message.chat.id, f"Спасибо, {full_name}! Ваше имя и фамилия сохранены. Для голосования используйте команду /voting")
-        print(f"handle_name_input: Обработка завершена для {full_name}, user_id: {user_id}") # Log 2
 
 def status(bot, message):
     user_id = message.from_user.id
@@ -133,7 +131,6 @@ def help_command(bot, message):
         /help - получение справки
         """
     bot.reply_to(message, help_text)
-
 
 def voting(bot, message):
     user_id = message.from_user.id
@@ -165,8 +162,12 @@ def voting(bot, message):
             try:
                 sent_poll = bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
                 user_confirmed[message.from_user.id] = False
-                message_ids[message.from_user.id] = message_ids.get(message.from_user.id, {})
-                message_ids[message.from_user.id]["poll"] = sent_poll.message_id
+                
+                # Initialize message_ids for the user
+                message_ids[message.from_user.id] = {
+                    "poll": sent_poll.message_id
+                }
+                
             except Exception as e:
                 bot.send_message(chat_id, f"Не удалось создать опрос: {e}")
         else:
@@ -202,21 +203,21 @@ def handle_poll_answer(bot, poll_answer):
                     text="Нет", callback_data=f"re_{poll_id_data}"
                 )
                 menu.add(confirm_yes_button, confirm_no_button)
-                poll_message = bot.send_message(user_id, f"Вы подтверждаете свои ответы?", reply_markup=menu)
 
-                user_confirmed[user_id] = True
-                message_ids[user_id] = {
-                    "confirm": poll_message.message_id,
-                    "poll": message_ids[user_id].get("poll")
-                }
+                # Check if the user_id exists in message_ids before accessing it
+                if user_id in message_ids:
+                    poll_message = bot.send_message(user_id, f"Вы подтверждаете свои ответы?", reply_markup=menu)
 
+                    user_confirmed[user_id] = True
+                    message_ids[user_id]["confirm"] = poll_message.message_id
+                else:
+                    print(f"User  ID {user_id} not found in message_ids: {message_ids}")  # Debugging log
+                    bot.send_message(chat_id, "Ошибка: ваши данные не найдены. Пожалуйста, попробуйте снова.")
         else:
             bot.send_message(chat_id, "Не удалось получить данные о тренировках.")
-
     else:
         bot.send_message(chat_id, "Нет активных опросов.")
 
-# Остальные функции без изменений, включая confirm_answers с удалением сообщений по правильным id.
 
 def payment_timeout(bot, user_id, qr_info, total_price):
     start_time = time.time()
