@@ -17,6 +17,7 @@ payment_timers = {}
 
 def load_latest_poll():
     loaded_polls = admin.load_polls() 
+    return loaded_polls
 
 def get_user_ids():
     return list(users.keys())
@@ -29,7 +30,6 @@ def load_latest_poll():
     now = datetime.datetime.now()
     current_time = now.strftime("%H:%M")  
     current_date = now.strftime("%d.%m")
-
 
     eligible_polls = {}
 
@@ -121,13 +121,12 @@ def status(bot, message):
     else:
         bot.reply_to(message, "Пожалуйста, сначала используйте команду /start, чтобы зарегистрироваться.")
 
-
 def help_command(bot, message):
     help_text = """
         Список команд:
         /start - начало работы с ботом
-        /status - проверка своего статуса оплаты"),
-        /voting - голосование за тренировки"),
+        /status - проверка своего статуса оплаты
+        /voting - голосование за тренировки
         /help - получение справки
         """
     bot.reply_to(message, help_text)
@@ -168,6 +167,8 @@ def voting(bot, message):
                     "poll": sent_poll.message_id
                 }
                 
+                print(f"Опрос отправлен пользователю {user_id}. ID опроса: {sent_poll.message_id}")
+                
             except Exception as e:
                 bot.send_message(chat_id, f"Не удалось создать опрос: {e}")
         else:
@@ -175,11 +176,15 @@ def voting(bot, message):
     else:
         bot.reply_to(message, "Пожалуйста, сначала используйте команду /start, чтобы зарегистрироваться.")
 
+
+
 def handle_poll_answer(bot, poll_answer):
     user_id = poll_answer.user.id
     poll_id = poll_answer.poll_id
     option_ids = poll_answer.option_ids
     chat_id = user_id
+
+    print(f"Пользователь {user_id} проголосовал в опросе {poll_id}. Выбранные варианты: {option_ids}")
 
     latest_poll = load_latest_poll()
     total_price = 0
@@ -194,6 +199,7 @@ def handle_poll_answer(bot, poll_answer):
                     if isinstance(option, dict):
                         price = option.get('price', 0)
                         total_price += price
+
             if not user_confirmed.get(user_id, False):
                 menu = telebot.types.InlineKeyboardMarkup()
                 confirm_yes_button = telebot.types.InlineKeyboardButton(
@@ -204,19 +210,24 @@ def handle_poll_answer(bot, poll_answer):
                 )
                 menu.add(confirm_yes_button, confirm_no_button)
 
-                # Check if the user_id exists in message_ids before accessing it
-                if user_id in message_ids:
-                    poll_message = bot.send_message(user_id, f"Вы подтверждаете свои ответы?", reply_markup=menu)
+                # Отправляем сообщение с запросом на подтверждение
+                poll_message = bot.send_message(user_id, f"Вы подтверждаете свои ответы?", reply_markup=menu)
 
-                    user_confirmed[user_id] = True
-                    message_ids[user_id]["confirm"] = poll_message.message_id
-                else:
-                    print(f"User  ID {user_id} not found in message_ids: {message_ids}")  # Debugging log
-                    bot.send_message(chat_id, "Ошибка: ваши данные не найдены. Пожалуйста, попробуйте снова.")
+                user_confirmed[user_id] = True
+                message_ids[user_id] = {
+                    "poll": message_ids.get(user_id, {}).get("poll"),
+                    "confirm": poll_message.message_id
+                }
+
+                print(f"Пользователь {user_id} получил запрос на подтверждение голосования.")
+            else:
+                print(f"Пользователь {user_id} уже подтвердил свои ответы.")
+                bot.send_message(chat_id, "Вы уже подтвердили свои ответы.")
         else:
             bot.send_message(chat_id, "Не удалось получить данные о тренировках.")
     else:
         bot.send_message(chat_id, "Нет активных опросов.")
+
 
 
 def payment_timeout(bot, user_id, qr_info, total_price):
@@ -231,12 +242,11 @@ def payment_timeout(bot, user_id, qr_info, total_price):
                 bot.delete_message(qr_info["chat_id"], qr_info["qr_message_id"])
                 bot.delete_message(qr_info["chat_id"], qr_info["confirm_message_id"])
             except Exception as e:
-                print(f"Error deleting message: {e}")
+                print(f"Ошибка удаления сообщения: {e}")
 
             bot.send_message(qr_info["chat_id"],
                             "Вы не подтвердили оплату и реквизиты были удалены. Нажмите команду /voting для повторного голосования.",)
             payment_timers.pop(user_id, None)
-
 
 def show_payment(bot, user_id, chat_id, total_price):
     latest_poll = load_latest_poll()
@@ -298,10 +308,10 @@ def show_payment(bot, user_id, chat_id, total_price):
 
         # Передаем имя пользователя в awaiting_confirmation
         awaiting_confirmation[user_id] = {"username": username, "confirm_message_id": confirm_message.message_id, "total_price": total_price}
+        print(f"Пользователь {user_id} получил ссылку на оплату.")
         return payment_message
     else:
         bot.send_message(chat_id, "Нет активных опросов.")
-
 
 def resend_payment(bot, call):
     user_id = call.from_user.id
@@ -316,7 +326,6 @@ def resend_payment(bot, call):
     else:
         bot.send_message(chat_id, "Нет активных опросов.")
 
-
 def cancel_payment(bot, call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
@@ -327,12 +336,11 @@ def cancel_payment(bot, call):
             bot.delete_message(chat_id, payment_info["qr_message_id"])
             bot.delete_message(chat_id, payment_info["confirm_message_id"])
         except Exception as e:
-            print(f"Error deleting message: {e}")
+            print(f"Ошибка удаления сообщения: {e}")
     bot.send_message(
         chat_id, "Вы не подтвердили оплату, нажмите команду /voting для повторного голосования"
     )
     bot.answer_callback_query(call.id, "Оплата отменена.")
-
 
 def payment_confirmation(bot, call):
     user_id = call.from_user.id
@@ -343,12 +351,20 @@ def payment_confirmation(bot, call):
             bot.delete_message(chat_id, payment_info["qr_message_id"])
             bot.delete_message(chat_id, payment_info["confirm_message_id"])
         except Exception as e:
-            print(f"Error deleting message: {e}")
+            print(f"Ошибка удаления сообщения: {e}")
     bot.send_message(chat_id, "Спасибо за оплату!")
     bot.answer_callback_query(call.id, "Оплата подтверждена, спасибо!")
     user_confirmed[user_id] = False
 
-
+def delete_message_safe(bot, chat_id, message_id):
+    try:
+        bot.delete_message(chat_id, message_id)
+        print(f"Удалено сообщение {message_id} в чате {chat_id}")
+    except telebot.apihelper.ApiTelegramException as e:
+        if 'message to delete not found' in str(e).lower():
+            print(f"Сообщение для удаления {message_id} в чате {chat_id} не найдено, игнорируем.")
+        else:
+            print(f"Ошибка при удалении сообщения {message_id} в чате {chat_id}: {e}")
 def confirm_answers(bot, call):
     user_id = call.from_user.id
     data = call.data.split("_")
@@ -356,15 +372,9 @@ def confirm_answers(bot, call):
     if data[0] == "re":
         msgs = message_ids.get(user_id, {})
         if "confirm" in msgs:
-            try:
-                bot.delete_message(call.message.chat.id, msgs["confirm"])
-            except Exception as e:
-                print(f"Ошибка удаления сообщения подтверждения: {e}")
+            delete_message_safe(bot, call.message.chat.id, msgs["confirm"])
         if "poll" in msgs:
-            try:
-                bot.delete_message(call.message.chat.id, msgs["poll"])
-            except Exception as e:
-                print(f"Ошибка удаления сообщения с опросом: {e}")
+            delete_message_safe(bot, call.message.chat.id, msgs["poll"])
         message_ids.pop(user_id, None)
 
         bot.send_message(call.message.chat.id, "Вы не подтвердили ваши ответы, для повторного голосования нажмите команду /voting")
@@ -382,15 +392,9 @@ def confirm_answers(bot, call):
 
     msgs = message_ids.get(user_id, {})
     if "confirm" in msgs:
-        try:
-            bot.delete_message(chat_id, msgs["confirm"])
-        except Exception as e:
-            print(f"Ошибка удаления сообщения подтверждения: {e}")
+        delete_message_safe(bot, chat_id, msgs["confirm"])
     if "poll" in msgs:
-        try:
-            bot.delete_message(chat_id, msgs["poll"])
-        except Exception as e:
-            print(f"Ошибка удаления сообщения с опросом: {e}")
+        delete_message_safe(bot, chat_id, msgs["poll"])
 
     message_ids.pop(user_id, None)
 
