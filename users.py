@@ -4,7 +4,6 @@ import qrcode
 from io import BytesIO
 import datetime
 import time
-import threading
 from shared_data import awaiting_confirmation, confirmed_payments
 import admin
 from ggl import write_name_to_google_sheet, authenticate_google_sheets
@@ -270,19 +269,22 @@ def send_payment_info(bot, user_id, training_info):
     img.save(bio, 'PNG')
     bio.seek(0)
 
-    # Отправка QR-кода
+    # Создание кнопки для оплаты
+    keyboard = types.InlineKeyboardMarkup()
+    pay_button = types.InlineKeyboardButton(text="Оплатить по СБП", url=payment_link)
+    keyboard.add(pay_button)
+
+    # Отправка QR-кода с кнопкой
     payment_message = bot.send_photo(
         chat_id,
         photo=bio,
         caption=f"Вы проголосовали за тренировки на {date} {time}. Сумма к оплате <b>{price} руб.</b> Для оплаты нажмите на кнопку или отсканируйте QR-код.",
         parse_mode="HTML",
+        reply_markup=keyboard  # Добавляем клавиатуру с кнопкой
     )
     bio.close()
 
-    # Создание кнопки для оплаты
-    keyboard = types.InlineKeyboardMarkup()
-    pay_button = types.InlineKeyboardButton(text="Оплатить", url=payment_link)
-    keyboard.add(pay_button)
+
 
     # Отправка сообщения с подтверждением оплаты
     confirm_keyboard = types.InlineKeyboardMarkup()
@@ -369,7 +371,7 @@ def payment_timeout(bot, user_id, qr_info, total_price):
     start_time = time.time()
 
     while user_id in payment_timers:
-        time.sleep(900)
+        time.sleep(82800)
         elapsed_time = time.time() - start_time
 
         if user_id in payment_timers:
@@ -422,7 +424,7 @@ def payment_confirmation(bot, call):
             bot.delete_message(chat_id, payment_info["confirm_message_id"])
         except Exception as e:
             print(f"Ошибка удаления сообщения: {e}")
-    bot.send_message(chat_id, f"Спасибо за оплату! Чтобы отслеживать статус тренировки нажмите команду /status")
+    bot.send_message(chat_id, f"Спасибо за оплату! Чтобы отслеживать статус тренировки и подтверждение оплаты нажмите команду /status")
     bot.answer_callback_query(call.id, "Оплата подтверждена, спасибо!")
     user_confirmed[user_id] = False
 
@@ -435,8 +437,6 @@ def delete_message_safe(bot, chat_id, message_id):
             print(f"Сообщение для удаления {message_id} в чате {chat_id} не найдено, игнорируем.")
         else:
             print(f"Ошибка при удалении сообщения {message_id} в чате {chat_id}: {e}")
-
-
 
 def handle_callback_query(bot, call):
     if call.data.startswith("cancel_payment_"):
