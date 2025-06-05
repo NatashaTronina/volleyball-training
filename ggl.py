@@ -9,11 +9,6 @@ from collections import defaultdict
 cache = defaultdict(dict)
 
 
-def normalize_name(full_name):
-    """Нормализует имя, удаляя части в скобках."""
-    normalized = re.sub(r'\s*\(.*?\)\s*', '', full_name)
-    return normalized.strip()  # Удаляем лишние пробелы
-
 def authenticate_google_sheets(json_file):
     """Аутентификация и получение клиента для работы с Google Sheets."""
     scopes = [
@@ -25,6 +20,18 @@ def authenticate_google_sheets(json_file):
     client = gspread.authorize(creds)
     return client
 
+def normalize_name(full_name):
+    """Нормализует имя, возвращая нормализованное имя и все возможные варианты имен, включая те, что в скобках."""
+    # Нормализуем имя, удаляя лишние пробелы
+    normalized = full_name.strip()
+    # Извлекаем все возможные варианты имен, включая те, что в скобках
+    parts = re.findall(r'(\w+\s+\w+)', full_name)  # Находим все пары слов
+    # Добавляем имена из скобок
+    brackets = re.findall(r'\((.*?)\)', full_name)
+    for bracket in brackets:
+        parts.append(bracket.strip())
+    return normalized, parts  # Возвращаем нормализованное имя и все части
+
 def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
     if client is None:
         return
@@ -32,21 +39,48 @@ def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
     sheet = client.open(spreadsheet_name)
     sheets_to_check = ["В.Расход", "В.Приход"]  # Листы для проверки
 
-    normalized_name = normalize_name(full_name)  # Нормализуем имя перед поиском
+    normalized_name, name_parts = normalize_name(full_name)  # Нормализуем имя перед поиском
 
     for sheet_name in sheets_to_check:
         worksheet = sheet.worksheet(sheet_name)
         column_data = worksheet.col_values(1)  # Получаем данные из столбца A
 
-        # Нормализуем имена в таблице для сравнения
-        normalized_column_data = [normalize_name(name) for name in column_data]
+        print(f"Проверяем в листе '{sheet_name}':")  # Отладочная информация
 
-        if normalized_name in normalized_column_data:
-            row_index = normalized_column_data.index(normalized_name) + 1  # Индекс строки
-            worksheet.update_cell(row_index, 2, str(user_id))  # Запись user_id в столбец B
-        else:
+        found = False
+        input_name_parts = normalized_name.split()
+        input_first_name = input_name_parts[0]
+
+        for i, table_name in enumerate(column_data):
+            # Удаляем скобки из имени в таблице
+            table_name_without_brackets = re.sub(r'\s*\(.*?\)\s*', '', table_name).strip()
+            table_name_parts = table_name_without_brackets.split()
+
+            # Получаем фамилию из имени в таблице
+            if len(table_name_parts) >= 1:
+                table_first_name = table_name_parts[0] # First Name
+
+                # Проверяем имя пользователя и первое имя в таблице
+                if input_first_name in table_first_name:
+                    row_index = i + 1
+                    worksheet.update_cell(row_index, 2, str(user_id))
+                    print(f"Записан user_id '{user_id}' для '{table_name}' в строке {row_index}.")
+                    found = True
+                    break
+        if not found: # Если имя не найдено, то проверяем остальные части
+            for part in name_parts:
+                for i, table_name in enumerate(column_data):
+                     if part in table_name:
+                        row_index = i + 1
+                        worksheet.update_cell(row_index, 2, str(user_id))
+                        print(f"Записан user_id '{user_id}' для '{table_name}' в строке {row_index}.")
+                        found = True
+                        break  # Если нашли соответствие, выходим из внутреннего цикла
+                if found:
+                    break
+
+        if not found:
             print(f"ФИО '{full_name}' не найдено в листе '{sheet_name}'.")
-
 def record_payment(client, spreadsheet_name, user_id, total_price):
     """Запись даты и суммы оплаты в лист 'В.Приход'."""
     if client is None:
