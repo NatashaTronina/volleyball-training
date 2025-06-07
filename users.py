@@ -102,19 +102,22 @@ def handle_name_input(bot, message):
         # Удаляем флаг ожидания
         users[user_id]['awaiting_name'] = False
         bot.send_message(message.chat.id, f"Спасибо, {full_name}! Ваше имя и фамилия сохранены. Для голосования используйте команду /voting")
-
 def status(bot, message):
     user_id = message.from_user.id
     if user_id in users:
         try:
+            status_message = ""
             if user_id in awaiting_confirmation:
-                total_price = awaiting_confirmation[user_id]["total_price"]
-                bot.reply_to(message, f"Ваша оплата не подтверждена администратором.")
-            elif user_id in confirmed_payments:
-                total_price = confirmed_payments[user_id]
-                bot.reply_to(message, f"Ваша оплата на сумму {total_price} руб. подтверждена администратором.")
-            else:
-                bot.reply_to(message, "У вас нет активных оплат.")
+                status_message += "Ожидают подтверждения:\n"
+                for payment in awaiting_confirmation[user_id]:
+                    status_message += f"- {payment['total_price']} руб.\n"
+            if user_id in confirmed_payments:
+                status_message += "Подтверждены:\n"
+                for price in confirmed_payments[user_id]:
+                    status_message += f"- {price} руб.\n"
+            if not status_message:
+                status_message = "У вас нет активных оплат."
+            bot.reply_to(message, status_message)
         except Exception as e:
             bot.reply_to(message, f"Ошибка при проверке статуса оплаты: {e}")
     else:
@@ -332,15 +335,17 @@ def send_payment_info(bot, user_id, training_info):
         "chat_id": chat_id,
     }
 
-    # Получаем имя пользователя из словаря users
+        # Получаем имя пользователя из словаря users
     username = users.get(user_id, "Неизвестный пользователь")
 
     # Передаем имя пользователя в awaiting_confirmation
-    awaiting_confirmation[user_id] = {
+    if user_id not in awaiting_confirmation:
+        awaiting_confirmation[user_id] = []
+    awaiting_confirmation[user_id].append({
         "username": username,
         "confirm_message_id": confirm_message.message_id,
         "total_price": price
-    }
+    })
     print(f"send_payment_info: Пользователь {user_id} получил ссылку на оплату.")
 
 def confirm_answers(bot, call):

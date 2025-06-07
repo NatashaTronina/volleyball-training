@@ -366,35 +366,34 @@ def get_latest_poll():
     if latest_poll:  
         return {latest_poll_id: latest_poll}
     return None
-
 def check_payments(bot, message):
     if is_admin(message):
         # Логируем содержимое awaiting_confirmation
         if awaiting_confirmation:
             text = "Список ожидающих подтверждения оплат:\n"
             bot.send_message(message.chat.id, text)
-            for user_id, payment_info in awaiting_confirmation.items():
-                # Извлекаем имя пользователя из вложенного словаря
-                username = payment_info["username"]["username"]  # Изменено здесь
-                total_price = payment_info["total_price"]
-                
-                # Создаем кликабельную ссылку на пользователя
-                admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
-                
-                # Отправляем сообщение админу с кликабельной ссылкой
-                keyboard = types.InlineKeyboardMarkup()
-                confirm_button = types.InlineKeyboardButton(
-                    text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}"
-                )
-                keyboard.add(confirm_button)
+            for user_id, payments in awaiting_confirmation.items():
+                for payment_info in payments:
+                    # Извлекаем имя пользователя из вложенного словаря
+                    username = payment_info["username"]["username"]
+                    total_price = payment_info["total_price"]
 
-                # Отправляем сообщение с кликабельным именем
-                bot.send_message(message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
+                    # Создаем кликабельную ссылку на пользователя
+                    admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
+
+                    # Отправляем сообщение админу с кликабельной ссылкой
+                    keyboard = types.InlineKeyboardMarkup()
+                    confirm_button = types.InlineKeyboardButton(
+                        text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{payment_info['confirm_message_id']}"
+                    )
+                    keyboard.add(confirm_button)
+
+                    # Отправляем сообщение с кликабельным именем
+                    bot.send_message(message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
         else:
             bot.send_message(message.chat.id, "Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
     else:
         bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
-
 
 def handle_poll_confirmation(bot, call):
     chat_id = call.message.chat.id
@@ -422,30 +421,47 @@ def handle_poll_confirmation(bot, call):
 
 client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json')
 
-
-def admin_confirm_payment(bot, call, client):
+def admin_confirm_payment(bot, call):
     admin_id = call.from_user.id
     if admin_id in ADMIN_ID:
         user_id = call.data.split("_")[2]
-        total_price = call.data.split("_")[3]
+        confirm_message_id_str = call.data.split("_")[3]
         chat_id = call.message.chat.id
-        username = awaiting_confirmation[int(user_id)]["username"]
 
-        del awaiting_confirmation[int(user_id)]
-        confirmed_payments[int(user_id)] = total_price
-        bot.answer_callback_query(call.id, "Оплата подтверждена.")
+        if int(user_id) in awaiting_confirmation:
+            # Находим индекс платежа по confirm_message_id
+            payment_index = next((i for i, payment in enumerate(awaiting_confirmation[int(user_id)])
+                                  if str(payment["confirm_message_id"]) == confirm_message_id_str), None)
 
-        # Запись даты и суммы в таблицу
-        record_payment(client, "Тренировки", user_id, total_price)
+            if payment_index is not None:
+                payment_info = awaiting_confirmation[int(user_id)].pop(payment_index)
 
-        # Удаляем сообщение сразу после успешной записи
-        try:
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-        except Exception as e:
-            print(f"Ошибка удаления сообщения подтверждения: {e}")
+                # Добавляем в confirmed_payments
+                if int(user_id) not in confirmed_payments:
+                    confirmed_payments[int(user_id)] = []
+                confirmed_payments[int(user_id)].append(payment_info["total_price"])
+
+                # Записываем в таблицу
+                record_payment(client, "Тренировки", int(user_id), int(payment_info["total_price"]))
+
+                bot.send_message(chat_id, "Оплата подтверждена.")
+
+                # Удаляем сообщение от админа
+                try:
+                    bot.delete_message(call.message.chat.id, call.message.message_id)
+                except Exception as e:
+                    print(f"Ошибка удаления сообщения подтверждения: {e}")
+
+                # Если у пользователя больше нет ожидающих подтверждения платежей, удаляем его из awaiting_confirmation
+                if not awaiting_confirmation[int(user_id)]:
+                    del awaiting_confirmation[int(user_id)]
+            else:
+                bot.send_message(chat_id, "Ошибка: Оплата не найдена.")
+        else:
+            bot.send_message(chat_id, "Ошибка: Оплата не найдена в awaiting_confirmation.")
     else:
         bot.send_message(call.message.chat.id, "У вас нет прав на выполнение этой операции.")
-        bot.answer_callback_query(call.id, "Нет прав.")
+
 
 def handle_callback_query(bot, call):
     if call.data.startswith('poll_confirm') or call.data.startswith('poll_edit'):
@@ -461,27 +477,29 @@ def confirm_payment(bot, call):
     total_price = call.data.split("_")[-1]
 
     if user_id in awaiting_confirmation:
-        full_name = awaiting_confirmation[user_id]["username"]["username"]
-        confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
+        #full_name = awaiting_confirmation[user_id]["username"]["username"]
+        #confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
 
-        try:
-            bot.delete_message(chat_id, confirm_message_id)
-        except Exception as e:
-            print(f"Error deleting confirmation message: {e}")
+        #try:
+        #    bot.delete_message(chat_id, confirm_message_id)
+        #except Exception as e:
+        #    print(f"Error deleting confirmation message: {e}")
 
-        del awaiting_confirmation[user_id]
+        #del awaiting_confirmation[user_id]
 
         # Отправка сообщения админу с кликабельным именем пользователя
-        admin_message = f"Пользователь [{full_name}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
+        #admin_message = f"Пользователь [{full_name}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
+        admin_message = "Оплату нужно подтведить"
 
         keyboard = types.InlineKeyboardMarkup()
-        confirm_button = types.InlineKeyboardButton(
-            text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}"
-        )
-        keyboard.add(confirm_button)
+        #confirm_button = types.InlineKeyboardButton(
+        #    text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}"
+        #)
+        #keyboard.add(confirm_button)
+        bot.send_message(chat_id, f"Оплату нужно подтвердить вручную")
 
-        for admin_id in ADMIN_ID:
-            bot.send_message(admin_id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
+        #for admin_id in ADMIN_ID:
+        #    bot.send_message(admin_id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
     else:
         bot.send_message(chat_id, "Ошибка: Запрос на подтверждение не найден.")
         bot.answer_callback_query(call.id, "Произошла ошибка.")
