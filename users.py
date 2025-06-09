@@ -476,8 +476,9 @@ def payment_confirmation(bot, call):
         if unique_payment_id in awaiting_confirmation[user_id]:
             print(f"Оплата с unique_payment_id {unique_payment_id} найдена в awaiting_confirmation")
 
-            # Получаем message_id QR-кода
+            # Получаем message_id QR-кода и сообщения "Вы подтверждаете оплату?"
             qr_message_id = awaiting_confirmation[user_id][unique_payment_id].get("qr_message_id")
+            confirm_message_id = awaiting_confirmation[user_id][unique_payment_id].get("confirm_message_id")
 
             # Удаляем сообщение с QR-кодом
             if qr_message_id:
@@ -485,6 +486,13 @@ def payment_confirmation(bot, call):
                     bot.delete_message(chat_id, qr_message_id)
                 except Exception as e:
                     print(f"Ошибка удаления сообщения с QR-кодом: {e}")
+
+            # Удаляем сообщение "Вы подтверждаете оплату?"
+            if confirm_message_id:
+                try:
+                    bot.delete_message(chat_id, confirm_message_id)
+                except Exception as e:
+                    print(f"Ошибка удаления сообщения 'Вы подтверждаете оплату?': {e}")
 
             bot.send_message(chat_id, "Спасибо за оплату! Чтобы отслеживать статус тренировки и подтверждение оплаты нажмите команду /status")
         else:

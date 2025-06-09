@@ -8,14 +8,16 @@ from DATE import get_day_of_week
 from shared_data import awaiting_confirmation, confirmed_payments, save_polls, load_polls
 import threading
 import schedule  
-from users import get_user_ids, users
 from ggl import record_payment, authenticate_google_sheets
+from users import get_user_ids, user_confirmed, users
 
 ADMIN_ID = [494635818]
 poll_data = {}
 poll_results = {}
 latest_poll = {}
 payment_details = {}
+
+client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json')
 
 POLL_DATA_FILE = "polls.json"
 
@@ -397,7 +399,6 @@ def check_payments(bot, message):
     else:
         bot.send_message(message.chat.id, "У вас нет прав для просмотра этой информации.")
 
-
 def handle_poll_confirmation(bot, call):
     chat_id = call.message.chat.id
     callback_data = call.data
@@ -410,6 +411,7 @@ def handle_poll_confirmation(bot, call):
         
         if scheduled_time and scheduled_date:
             schedule_the_poll(bot, poll_id, scheduled_time)  # Schedule the poll
+            user_confirmed.clear()  # Сбрасываем словарь user_confirmed
         else:
             bot.send_message(chat_id, "Ошибка: Не установлены дата или время для отправки опроса.")
 
@@ -418,11 +420,10 @@ def handle_poll_confirmation(bot, call):
         if poll_id in poll_data:
             poll_data[poll_id].clear()
             save_polls(poll_data)
+            user_confirmed.clear() #  Сбрасываем словарь user_confirmed и при редактировании опроса
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(call.message, get_date, poll_id, bot)
 
-
-client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json')
 
 def admin_confirm_payment(bot, call):
     admin_id = call.from_user.id
