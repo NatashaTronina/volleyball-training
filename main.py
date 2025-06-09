@@ -5,7 +5,7 @@ import users
 import threading
 from admin import is_admin, admin_confirm_payment
 from users import handle_poll_answer as users_handle_poll_answer
-from users import handle_callback_query as users_handle_callback_query
+from users import handle_callback_query
 from shared_data import load_polls
 from ggl import authenticate_google_sheets
 
@@ -52,12 +52,13 @@ def handle_admin_commands(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
-    if call.data.startswith("admin_confirm_"):
-        admin.admin_confirm_payment(bot, call)  # Pass the client here
-    elif call.data.startswith("poll_confirm") or call.data.startswith("poll_edit"):
-        admin.handle_poll_confirmation(bot, call)
+    print(f"Получен callback_query с данными: {call.data}")  # Add this line
+    if call.data.startswith("admin_confirm_") or call.data.startswith("poll_confirm") or call.data.startswith("poll_edit"):
+        print("Вызываем admin_handle_callback_query")  # Add this line
+        admin.admin_handle_callback_query(bot, call)  # Вызываем admin_handle_callback_query
     else:
-        users.handle_callback_query(bot, call)
+        print("Вызываем users_handle_callback_query")  # Add this line
+        users.handle_callback_query(bot, call)  # Вызываем users_handle_callback_query
 
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):

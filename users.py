@@ -8,8 +8,10 @@ from shared_data import awaiting_confirmation, confirmed_payments
 import admin
 from ggl import write_name_to_google_sheet, authenticate_google_sheets
 import schedule
+import uuid
 
 users = {}
+ADMIN_ID = [494635818]
 user_confirmed = {}
 message_ids = {}
 payment_timers = {}
@@ -102,6 +104,7 @@ def handle_name_input(bot, message):
         # Удаляем флаг ожидания
         users[user_id]['awaiting_name'] = False
         bot.send_message(message.chat.id, f"Спасибо, {full_name}! Ваше имя и фамилия сохранены. Для голосования используйте команду /voting")
+
 def status(bot, message):
     user_id = message.from_user.id
     if user_id in users:
@@ -109,8 +112,9 @@ def status(bot, message):
             status_message = ""
             if user_id in awaiting_confirmation:
                 status_message += "Ожидают подтверждения:\n"
-                for payment in awaiting_confirmation[user_id]:
-                    status_message += f"- {payment['total_price']} руб.\n"
+                for payment_id, payment_info in awaiting_confirmation[user_id].items(): # Corrected line
+                    status_message += f"- {payment_info['total_price']} руб.\n" # Corrected line
+
             if user_id in confirmed_payments:
                 status_message += "Подтверждены:\n"
                 for price in confirmed_payments[user_id]:
@@ -272,10 +276,15 @@ def schedule_qr_code_send(bot, user_id, training_info):
         bot.send_message(user_id, "Произошла ошибка при обработке даты и времени тренировки. Обратитесь к администратору.")
 
 
+
+
+
+    
+
 def send_payment_info(bot, user_id, training_info):
     chat_id = training_info.get('chat_id')  # Use .get() for safety
     if not chat_id:
-        print(f"send_payment_info:  chat_id is missing for user {user_id}.  Skipping payment info.")
+        print(f"send_payment_info: chat_id is missing for user {user_id}. Skipping payment info.")
         return
 
     price = training_info['price']
@@ -283,7 +292,7 @@ def send_payment_info(bot, user_id, training_info):
     time = training_info['time']
     payment_link = training_info['payment_link']
 
-    print(f"send_payment_info: Отправка QR-кода пользователю {user_id} (chat_id: {chat_id}) для тренировки {date} {time}") # Debug info
+    print(f"send_payment_info: Отправка QR-кода пользователю {user_id} (chat_id: {chat_id}) для тренировки {date} {time}")  # Debug info
 
     # Генерация QR-кода
     qr = qrcode.QRCode(
@@ -315,10 +324,16 @@ def send_payment_info(bot, user_id, training_info):
     )
     bio.close()
 
+    # Получаем имя пользователя из словаря users
+    username = users.get(user_id, {}).get('username', "Неизвестный пользователь") # type: ignore
+
+    # Генерируем уникальный идентификатор для платежа
+    unique_payment_id = str(uuid.uuid4())
+
     # Отправка сообщения с подтверждением оплаты
     confirm_keyboard = types.InlineKeyboardMarkup()
     confirm_button = types.InlineKeyboardButton(
-        text="Да", callback_data=f"paid_{user_id}_{price}"
+        text="Да", callback_data=f"paid_{unique_payment_id}_{price}"
     )
     cancel_button = types.InlineKeyboardButton(
         text="Нет", callback_data=f"cancel_payment_{user_id}_{price}"
@@ -329,23 +344,18 @@ def send_payment_info(bot, user_id, training_info):
         chat_id, f"Вы подтверждаете оплату?", reply_markup=confirm_keyboard
     )
 
-    payment_timers[user_id] = {
-        "qr_message_id": payment_message.message_id,
-        "confirm_message_id": confirm_message.message_id,
-        "chat_id": chat_id,
-    }
-
-        # Получаем имя пользователя из словаря users
-    username = users.get(user_id, "Неизвестный пользователь")
-
     # Передаем имя пользователя в awaiting_confirmation
     if user_id not in awaiting_confirmation:
-        awaiting_confirmation[user_id] = []
-    awaiting_confirmation[user_id].append({
+        awaiting_confirmation[user_id] = {}
+
+    awaiting_confirmation[user_id][unique_payment_id] = {
         "username": username,
-        "confirm_message_id": confirm_message.message_id,
-        "total_price": price
-    })
+        "chat_id": training_info['chat_id'],
+        "confirm_message_id": 0,  # confirm_message не нужен
+        "total_price": training_info['price'],
+        "unique_payment_id": unique_payment_id
+    }
+
     print(f"send_payment_info: Пользователь {user_id} получил ссылку на оплату.")
 
 def confirm_answers(bot, call):
@@ -374,11 +384,7 @@ def confirm_answers(bot, call):
     poll_id = data[1]
     total_price = data[2]
 
-
     msgs = message_ids.get(user_id, {})
-    #if "confirm" in msgs:  # Нет необходимости удалять, уже удалено выше при "re"
-    #    delete_message_safe(bot, chat_id, msgs["confirm"])
-
     message_ids.pop(user_id, None)
 
     latest_poll = load_latest_poll()
@@ -392,6 +398,20 @@ def confirm_answers(bot, call):
                 selected_training_infos.append(option)
 
         print(f"confirm_answers: Пользователь {user_id} подтвердил ответы. Планирование отправки QR-кодов.")
+
+        # Удаляем все подтвержденные платежи из awaiting_confirmation
+        if user_id in awaiting_confirmation:
+            payments_to_remove = []
+            for payment in awaiting_confirmation[user_id]:
+                if str(payment['total_price']) == total_price:
+                    payments_to_remove.append(payment)
+
+            for payment in payments_to_remove:
+                awaiting_confirmation[user_id].remove(payment)
+
+            # Если после удаления список пуст, удаляем пользователя из awaiting_confirmation
+            if not awaiting_confirmation[user_id]:
+                del awaiting_confirmation[user_id]
 
         # Планируем/отправляем QR-код только после подтверждения
         for training_info in selected_training_infos:
@@ -455,20 +475,36 @@ def cancel_payment(bot, call):
     )
     bot.answer_callback_query(call.id, "Оплата отменена.")
 
+
+
 def payment_confirmation(bot, call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
-    if user_id in payment_timers:
-        payment_info = payment_timers.pop(user_id, None)
-        try:
-            bot.delete_message(chat_id, payment_info["qr_message_id"])
-            bot.delete_message(chat_id, payment_info["confirm_message_id"])
-        except Exception as e:
-            print(f"Ошибка удаления сообщения: {e}")
-    bot.send_message(chat_id, f"Спасибо за оплату! Чтобы отслеживать статус тренировки и подтверждение оплаты нажмите команду /status")
-    bot.answer_callback_query(call.id, "Оплата подтверждена, спасибо!")
-    user_confirmed[user_id] = False
+    callback_data = call.data.split("_")
+    unique_payment_id = callback_data[1]  # Get the unique_payment_id
+    price = callback_data[2]
+    print(f"payment_confirmation: Получен callback от пользователя {user_id} на сумму {price} с unique_payment_id {unique_payment_id}")
 
+    if user_id in awaiting_confirmation:
+        if unique_payment_id in awaiting_confirmation[user_id]:
+            print(f"Оплата с unique_payment_id {unique_payment_id} найдена в awaiting_confirmation")
+            # del awaiting_confirmation[user_id][unique_payment_id]  # Delete only the specific payment - MOVED TO admin_confirm_payment
+
+            # Отправка сообщения админу с информацией об оплате
+            # admin_message = f"Пользователь [{call.from_user.username}](tg://user?id={user_id}) подтвердил оплату на сумму {price} руб. Необходимо подтвердить!"
+            # keyboard = types.InlineKeyboardMarkup()
+            # confirm_button = types.InlineKeyboardButton(
+            #     text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{unique_payment_id}" # todo проверить как работает
+            # )
+            # keyboard.add(confirm_button)
+            # for admin_id in ADMIN_ID:
+            #     bot.send_message(admin_id, admin_message, reply_markup=keyboard, parse_mode="Markdown") # todo проверить
+        else:
+            bot.send_message(chat_id, "Ошибка: Оплата не найдена.")
+
+    else:
+        bot.send_message(chat_id, "Ошибка: Оплата не найдена.")
+        bot.send_message(chat_id, "Ошибка: Запрос на подтверждение не найден.")
 def delete_message_safe(bot, chat_id, message_id):
     try:
         bot.delete_message(chat_id, message_id)
