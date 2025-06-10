@@ -19,12 +19,15 @@ bot = telebot.TeleBot(TOKEN)
 admin.poll_data = load_polls()
 admin.set_commands(bot)
 
-@bot.message_handler(commands=['start'])
-def handle_start(message):
+def handle_start_command(message):
     if is_admin(message):
         admin.admin_start_command(bot, message)
     else:
         users.users_start_command(bot, message)
+
+@bot.message_handler(commands=['start'])
+def handle_start(message):
+    handle_start_command(message)
 
 @bot.message_handler(commands=['help', 'status', 'voting'])
 def handle_user_other_commands(message):
@@ -53,7 +56,7 @@ def handle_admin_commands(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     print(f"Получен callback_query с данными: {call.data}")  
-    if call.data.startswith("admin_confirm_") or call.data.startswith("poll_confirm") or call.data.startswith("poll_edit"):
+    if call.data.startswith("admin_confirm_") or call.data.startswith('poll_confirm') or call.data.startswith('poll_edit') or call.data.startswith("cancel_creation_"):
         print("Вызываем admin_handle_callback_query")  
         admin.admin_handle_callback_query(bot, call)  
     else:
@@ -66,7 +69,9 @@ def handle_poll_answer(poll_answer):
 
 @bot.message_handler(func=lambda message: True)  
 def handle_all_text_messages(message):
-    users.handle_name_input(bot, message)  
+    if message.text.startswith('/'):
+        return  # Не сбрасываем обработчик для команд
+    users.handle_name_input(bot, message)
 
 if __name__ == '__main__':
     print("Бот запущен")

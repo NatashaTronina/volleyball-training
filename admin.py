@@ -7,7 +7,7 @@ import uuid
 from DATE import get_day_of_week
 from shared_data import awaiting_confirmation, confirmed_payments, save_polls, load_polls
 import threading
-import schedule  
+import schedule
 from ggl import record_payment, authenticate_google_sheets
 from users import get_user_ids, user_confirmed, users
 
@@ -49,10 +49,14 @@ def create_poll_command(bot, message):
         latest_poll["id"] = poll_id
         poll_data[poll_id] = []
 
+        # Очищаем user_confirmed при создании нового опроса
+        user_confirmed.clear()
+
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(message, get_date, poll_id, bot)
     else:
         bot.send_message(message.chat.id, "У вас нет прав для создания опросов.")
+
 
 def get_date(message, poll_id, bot):
     date = message.text
@@ -157,10 +161,7 @@ def handle_comment_choice(message, poll_id, bot):
         if poll_id in poll_data and poll_data[poll_id]:
             poll_data[poll_id][-1]['comment'] = ""
             save_polls(poll_data)
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
-        bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-        bot.register_next_step_handler(message, next_action, poll_id, bot)
+        next_action(message, poll_id, bot)
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных вариантов:")
         bot.register_next_step_handler(message, handle_comment_choice, poll_id, bot)
@@ -171,12 +172,16 @@ def get_comment(message, poll_id, bot):
     if poll_id in poll_data and poll_data[poll_id]:
         poll_data[poll_id][-1]['comment'] = comment
         save_polls(poll_data)
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"))
-    bot.send_message(chat_id, "Что дальше?", reply_markup=keyboard)
-    bot.register_next_step_handler(message, next_action, poll_id, bot)
+    next_action(message, poll_id, bot)
 
 def next_action(message, poll_id, bot):
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"), types.KeyboardButton("Отменить создание"))
+
+    bot.send_message(message.chat.id, "Что дальше?", reply_markup=keyboard)
+    bot.register_next_step_handler(message, handle_next_action_choice, poll_id, bot)
+
+def handle_next_action_choice(message, poll_id, bot):
     action = message.text
     chat_id = message.chat.id
     if action == "Создать опрос":
@@ -185,6 +190,13 @@ def next_action(message, poll_id, bot):
     elif action == "Добавить еще вариант":
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(message, get_date, poll_id, bot)
+    elif action == "Отменить создание":
+        if poll_id in poll_data:
+            del poll_data[poll_id]
+            save_polls(poll_data)
+            user_confirmed.clear()
+        bot.send_message(chat_id, "Создание опроса отменено.")
+        return  # Важно: прерываем цепочку обработчиков
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных")
 
@@ -250,7 +262,8 @@ def save_sbp_link_to_all(message, poll_id, bot):
         for item in poll_data[poll_id]:
             item['payment_link'] = sbp_link
         save_polls(poll_data)
-        bot.send_message(chat_id, "Ссылка на СБП сохранена. Пожалуйста, введите дату для отправки опроса в формате ДД.ММ:")
+        keyboard = types.InlineKeyboardMarkup()
+        bot.send_message(chat_id, "Ссылка на СБП сохранена. Пожалуйста, введите дату для отправки опроса в формате ДД.ММ:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_scheduled_date, poll_id, bot)
     else:
         bot.send_message(chat_id, "Ошибка: Не найден опрос. Пожалуйста, начните сначала.")
@@ -266,7 +279,8 @@ def get_scheduled_date(message, poll_id, bot):
         else:
             bot.send_message(chat_id, "Ошибка: Не найден опрос с данным poll_id.")
             return
-        bot.send_message(chat_id, "Введите время для отправки опроса в формате ЧЧ-ММ:")
+        keyboard = types.InlineKeyboardMarkup()
+        bot.send_message(chat_id, "Введите время для отправки опроса в формате ЧЧ-ММ:", reply_markup=keyboard)
         bot.register_next_step_handler(message, get_scheduled_time, poll_id, bot)
     else:
         bot.send_message(chat_id, "Неверный формат даты. Пожалуйста, введите дату в формате ДД.ММ:")
@@ -286,8 +300,8 @@ def get_scheduled_time(message, poll_id, bot):
         for option in poll_data[poll_id]:
             date = option.get('date', 'Не указана')
             day = option.get('day', 'Не указана')
-            time = option.get('time', 'Не указано')
-            training_type = option.get('training_type', 'Не указано')
+            time = option.get('time', 'Не указана')
+            training_type = option.get('training_type', 'Не указана')
             price = option.get('price', 'Не указана')
             location = option.get('location', 'Не указана')
             comment = option.get('comment', '')
@@ -400,9 +414,18 @@ def check_payments(bot, message):
 def handle_poll_confirmation(bot, call):
     chat_id = call.message.chat.id
     callback_data = call.data
-    poll_id = callback_data.split('_')[2]
+
+    if callback_data.startswith("cancel_creation_"):
+        poll_id = callback_data.split("_")[2]
+        if poll_id in poll_data:
+            del poll_data[poll_id]
+            save_polls(poll_data)
+            user_confirmed.clear()
+        bot.send_message(chat_id, "Создание опроса отменено.")
+        return
 
     if callback_data.startswith('poll_confirm'):
+        poll_id = callback_data.split('_')[2]
         bot.send_message(chat_id, "Опрос подтвержден. Расписание установлено.")
         scheduled_time = poll_data[poll_id][0].get('scheduled_time')
         scheduled_date = poll_data[poll_id][0].get('scheduled_date')
@@ -414,6 +437,7 @@ def handle_poll_confirmation(bot, call):
             bot.send_message(chat_id, "Ошибка: Не установлены дата или время для отправки опроса.")
 
     elif callback_data.startswith('poll_edit'):
+        poll_id = callback_data.split('_')[2]
         bot.send_message(chat_id, "Начинаем пересоздание опроса...")
         if poll_id in poll_data:
             poll_data[poll_id].clear()
@@ -421,7 +445,8 @@ def handle_poll_confirmation(bot, call):
             user_confirmed.clear() 
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(call.message, get_date, poll_id, bot)
-
+    
+    
 
 def admin_confirm_payment(bot, call):
     admin_id = call.from_user.id
@@ -458,7 +483,7 @@ def admin_confirm_payment(bot, call):
         bot.send_message(call.message.chat.id, "У вас нет прав на выполнение этой операции.")
 
 def admin_handle_callback_query(bot, call):
-    if call.data.startswith('poll_confirm') or call.data.startswith('poll_edit'):
+    if call.data.startswith('poll_confirm') or call.data.startswith('poll_edit') or call.data.startswith("cancel_creation_"):
         handle_poll_confirmation(bot, call)
     elif call.data.startswith("admin_confirm_"):
         admin_confirm_payment(bot, call)
