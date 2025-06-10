@@ -168,12 +168,9 @@ def voting(bot, message):
                 sent_poll = bot.send_poll(message.chat.id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
                 user_confirmed[message.from_user.id] = False
                 
-                # Initialize message_ids for the user
                 message_ids[message.from_user.id] = {
                     "poll": sent_poll.message_id
                 }
-                
-                print(f"Опрос отправлен пользователю {user_id}. ID опроса: {sent_poll.message_id}")
                 
             except Exception as e:
                 bot.send_message(chat_id, f"Не удалось создать опрос: {e}")
@@ -186,8 +183,6 @@ def handle_poll_answer(bot, poll_answer):
     user_id = poll_answer.user.id
     poll_id = poll_answer.poll_id
     option_ids = poll_answer.option_ids
-
-    print(f"handle_poll_answer: Пользователь {user_id} проголосовал в опросе {poll_id}. Выбранные варианты: {option_ids}")
 
     latest_poll = load_latest_poll()
     total_price = 0
@@ -204,7 +199,7 @@ def handle_poll_answer(bot, poll_answer):
                     price = option.get('price', 0)
                     total_price += price
                     selected_training_infos.append(option)
-                    print(f"handle_poll_answer:  Выбрана тренировка: {option}")
+
 
         if not user_confirmed.get(user_id, False):
             menu = telebot.types.InlineKeyboardMarkup()
@@ -222,52 +217,33 @@ def handle_poll_answer(bot, poll_answer):
             user_confirmed[user_id] = True
             message_ids[user_id] = {
                 "poll": message_ids.get(user_id, {}).get("poll"),
-                "confirm": poll_message.message_id
-            }
-
-            print(f"handle_poll_answer: Пользователь {user_id} получил запрос на подтверждение голосования.")
+                "confirm": poll_message.message_id}
         else:
-            print(f"handle_poll_answer: Пользователь {user_id} уже подтвердил свои ответы.")
             bot.send_message(user_id, "Вы уже подтвердили свои ответы.")
 
 def schedule_qr_code_send(bot, user_id, training_info):
-    # Извлечение даты и времени тренировки
     training_date = training_info['date']
-    training_time = training_info['time'].replace("-", ":")  # Заменяем '-' на ':'
+    training_time = training_info['time'].replace("-", ":") 
 
-    # Преобразование даты и времени в datetime
     try:
-        # Получаем текущую дату и время
         current_datetime = datetime.datetime.now()
-
-        # Преобразуем строку даты и времени тренировки в объект datetime
         scheduled_datetime = datetime.datetime.strptime(f"{training_date}.{training_info['year']} {training_time}", "%d.%m.%Y %H:%M")
-
         time_difference = scheduled_datetime - current_datetime
 
-        print(f"schedule_qr_code_send: Для пользователя {user_id}, тренировка {training_date} {training_time}, разница во времени: {time_difference}") # Added debug info
-
         if time_difference <= datetime.timedelta(days=1):
-            # Если до тренировки меньше суток, отправляем QR-код сразу
-            print(f"schedule_qr_code_send: До тренировки осталось меньше суток. Отправляем QR-код пользователю {user_id} прямо сейчас.")
             send_payment_info(bot, user_id, training_info)
         else:
-            # Иначе, планируем отправку за сутки до тренировки
-            send_time = scheduled_datetime - datetime.timedelta(days=1)  # За сутки до
-            print(f"schedule_qr_code_send: До тренировки осталось больше суток. QR-код будет отправлен пользователю {user_id} в {send_time.strftime('%H:%M')} на дату {training_date}.")
-
-            # Используем lambda для передачи training_info в schedule.do
+    
+            send_time = scheduled_datetime - datetime.timedelta(days=1) 
             schedule.every().day.at(send_time.strftime("%H:%M")).do(lambda: send_payment_info(bot, user_id, training_info))
-            # schedule.every(10).seconds.do(lambda: send_payment_info, bot, user_id, training_info)  # Для тестов
 
     except ValueError as e:
         print(f"schedule_qr_code_send: Ошибка при обработке даты и времени: {e}")
         bot.send_message(user_id, "Произошла ошибка при обработке даты и времени тренировки. Обратитесь к администратору.")
 
 def send_payment_info(bot, user_id, training_info):
-    chat_id = training_info.get('chat_id')  # Use .get() for safety
+    chat_id = training_info.get('chat_id')  
     if not chat_id:
-        print(f"send_payment_info: chat_id is missing for user {user_id}. Skipping payment info.")
         return
 
     price = training_info['price']
@@ -275,9 +251,6 @@ def send_payment_info(bot, user_id, training_info):
     time = training_info['time']
     payment_link = training_info['payment_link']
 
-    print(f"send_payment_info: Отправка QR-кода пользователю {user_id} (chat_id: {chat_id}) для тренировки {date} {time}")  # Debug info
-
-    # Генерация QR-кода
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -301,7 +274,7 @@ def send_payment_info(bot, user_id, training_info):
     payment_message = bot.send_photo(
         chat_id,
         photo=bio,
-        caption=f"Вы проголосовали за тренировки на {date} {time}. Сумма к оплате <b>{price} руб.</b> Для оплаты нажмите на кнопку или отсканируйте QR-код.",
+        caption=f"Вы проголосовали за тренировки на <b>{date} {time}.</b> \nСумма к оплате <b>{price} руб.</b> Для оплаты нажмите на кнопку или отсканируйте QR-код.",
         parse_mode="HTML",
         reply_markup=keyboard  # Добавляем клавиатуру с кнопкой
     )
@@ -335,12 +308,10 @@ def send_payment_info(bot, user_id, training_info):
         "username": username,
         "chat_id": training_info['chat_id'],
         "confirm_message_id": confirm_message.message_id,
-        "qr_message_id": payment_message.message_id, # Сохраняем message_id QR-кода
+        "qr_message_id": payment_message.message_id, 
         "total_price": training_info['price'],
         "unique_payment_id": unique_payment_id
     }
-
-    print(f"send_payment_info: Пользователь {user_id} получил ссылку на оплату.")
 
 
 def confirm_answers(bot, call):
@@ -351,12 +322,11 @@ def confirm_answers(bot, call):
     bot.answer_callback_query(call.id)
 
     if data[0] == "re":
-        # Пользователь не подтвердил ответы
         msgs = message_ids.get(user_id, {})
         if "confirm" in msgs:
-            delete_message_safe(bot, chat_id, msgs["confirm"])  # Удаляем сообщение "Вы подтверждаете свои ответы?"
+            delete_message_safe(bot, chat_id, msgs["confirm"])  
         if "poll" in msgs:
-            delete_message_safe(bot, chat_id, msgs["poll"])  # Удаляем сообщение с опросом
+            delete_message_safe(bot, chat_id, msgs["poll"]) 
         message_ids.pop(user_id, None)
 
         bot.send_message(chat_id, "Вы не подтвердили ваши ответы, для повторного голосования нажмите команду /voting")
@@ -382,9 +352,6 @@ def confirm_answers(bot, call):
             if isinstance(option, dict):
                 selected_training_infos.append(option)
 
-        print(f"confirm_answers: Пользователь {user_id} подтвердил ответы. Планирование отправки QR-кодов.")
-
-        # Удаляем все подтвержденные платежи из awaiting_confirmation
         if user_id in awaiting_confirmation:
             payments_to_remove = []
             for payment in awaiting_confirmation[user_id]:
@@ -394,27 +361,19 @@ def confirm_answers(bot, call):
             for payment in payments_to_remove:
                 awaiting_confirmation[user_id].remove(payment)
 
-            # Если после удаления список пуст, удаляем пользователя из awaiting_confirmation
             if not awaiting_confirmation[user_id]:
                 del awaiting_confirmation[user_id]
-        # Удаляем сообщение "Вы подтверждаете свои ответы?"
         if "confirm" in msgs:
             delete_message_safe(bot, chat_id, msgs["confirm"])
-            message_ids.pop(user_id, None)  # Удаляем инфу о сообщениях
+            message_ids.pop(user_id, None)  
         bot.send_message(chat_id, "Ожидайте QR-код для выбранных тренировок")
-        # Планируем/отправляем QR-код только после подтверждения
         for training_info in selected_training_infos:
-            training_info['chat_id'] = users.get(user_id, {}).get('chat_id')  # Ensure chat_id exists
-            if training_info['chat_id']:  # Проверяем, что chat_id существует
+            training_info['chat_id'] = users.get(user_id, {}).get('chat_id')  
+            if training_info['chat_id']:  
                 schedule_qr_code_send(bot, user_id, training_info)
-            else:
-                print(f"confirm_answers: Не удалось запланировать отправку QR-кода: chat_id для пользователя {user_id} не найден.")
-
         if total_price == "0":
             bot.send_message(chat_id, "Ваши ответы подтверждены. Спасибо!")
             user_confirmed[user_id] = False
-        else:
-            print(f"confirm_answers: Отправка QR-кода не должна происходить здесь. Пользователь {user_id} подтвердил свои ответы, но QR-код не будет отправлен.")
 
 def payment_timeout(bot, user_id, qr_info, total_price):
     start_time = time.time()
@@ -450,7 +409,6 @@ def resend_payment(bot, call):
 def cancel_payment(bot, call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
-    # Clear timer
     if user_id in payment_timers:
         payment_info = payment_timers.pop(user_id, None)
         try:
@@ -470,24 +428,18 @@ def payment_confirmation(bot, call):
     callback_data = call.data.split("_")
     unique_payment_id = callback_data[1]
     price = callback_data[2]
-    print(f"payment_confirmation: Получен callback от пользователя {user_id} на сумму {price} с unique_payment_id {unique_payment_id}")
 
     if user_id in awaiting_confirmation:
         if unique_payment_id in awaiting_confirmation[user_id]:
-            print(f"Оплата с unique_payment_id {unique_payment_id} найдена в awaiting_confirmation")
-
-            # Получаем message_id QR-кода и сообщения "Вы подтверждаете оплату?"
             qr_message_id = awaiting_confirmation[user_id][unique_payment_id].get("qr_message_id")
             confirm_message_id = awaiting_confirmation[user_id][unique_payment_id].get("confirm_message_id")
 
-            # Удаляем сообщение с QR-кодом
             if qr_message_id:
                 try:
                     bot.delete_message(chat_id, qr_message_id)
                 except Exception as e:
                     print(f"Ошибка удаления сообщения с QR-кодом: {e}")
 
-            # Удаляем сообщение "Вы подтверждаете оплату?"
             if confirm_message_id:
                 try:
                     bot.delete_message(chat_id, confirm_message_id)
@@ -523,4 +475,4 @@ def handle_callback_query(bot, call):
 def run_scheduler():
     while True:
         schedule.run_pending()
-        time.sleep(1)  # Проверка каждую секунду
+        time.sleep(1)  

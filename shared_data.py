@@ -20,5 +20,4 @@ def load_polls():
             print(f"load_polls: Ошибка декодирования JSON: {e}")
             return {}
     else:
-        print(f"load_polls: Файл {POLL_DATA_FILE} не найден.")
         return {}

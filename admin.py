@@ -187,7 +187,13 @@ def next_action(message, poll_id, bot):
         bot.register_next_step_handler(message, get_date, poll_id, bot)
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных")
-        
+
+def reset_payment_status(user_id):
+    if user_id in confirmed_payments:
+        del confirmed_payments[user_id]
+    if user_id in awaiting_confirmation:
+        del awaiting_confirmation[user_id]
+
 def create_and_send_poll(bot, chat_id, poll_id):
     options = []
     if poll_id in poll_data:
@@ -214,6 +220,8 @@ def create_and_send_poll(bot, chat_id, poll_id):
             user_ids = [int(user_id) for user_id in user_ids] 
 
             for user_id in user_ids:
+                reset_payment_status(user_id)
+
                 try:
                     user_info = users.get(user_id)
                     if user_info and "chat_id" in user_info:
@@ -233,6 +241,7 @@ def create_and_send_poll(bot, chat_id, poll_id):
             bot.send_message(ADMIN_ID[0], f"Не удалось создать и отправить опрос: {e}")
     else:
         bot.send_message(ADMIN_ID[0], "Нет данных для создания опроса.")
+
 
 def save_sbp_link_to_all(message, poll_id, bot):
     sbp_link = message.text.strip()
@@ -273,7 +282,6 @@ def get_scheduled_time(message, poll_id, bot):
                 item['scheduled_time'] = scheduled_time
             save_polls(poll_data)
 
-        # Prepare the options for confirmation
         options = []
         for option in poll_data[poll_id]:
             date = option.get('date', 'Не указана')
@@ -288,11 +296,9 @@ def get_scheduled_time(message, poll_id, bot):
                 option_string = f"{date} ({day}) {time} - {training_type} ({location}, {price} руб.) {comment}"
                 options.append(option_string)
 
-        # Create the confirmation message
         confirmation_message = f"Вы подтверждаете опрос с расписанием на {date} в {scheduled_time}?\n\n"
         confirmation_message += "\n".join(options)
         
-        # Create confirmation buttons
         keyboard = types.InlineKeyboardMarkup()
         button_correct = types.InlineKeyboardButton(text="Подтверждаю", callback_data=f'poll_confirm_{poll_id}')
         button_edit = types.InlineKeyboardButton(text="Не подтверждаю", callback_data=f'poll_edit_{poll_id}')
@@ -313,7 +319,6 @@ def schedule_the_poll(bot, poll_id, scheduled_time):
             create_and_send_poll(bot, ADMIN_ID[0], poll_id)
             poll_sent = True 
 
-    # Запланировать задачу на указанное время
     schedule.every().day.at(scheduled_time).do(send_poll_job)
 
 def send_scheduled_poll(bot):
@@ -371,28 +376,21 @@ def get_latest_poll():
 
 def check_payments(bot, message):
     if is_admin(message):
-        # Логируем содержимое awaiting_confirmation
         if awaiting_confirmation:
-            print(f"Текущий список ожидающих подтверждения: {awaiting_confirmation}")
 
             text = "Список ожидающих подтверждения оплат:\n"
-            # bot.send_message(message.chat.id, text)  # Убрали эту строку
 
             for user_id, payments in awaiting_confirmation.items():
-                for unique_payment_id, payment_info in payments.items():  # Accessing payment info correctly
-                    # Извлекаем имя пользователя из вложенного словаря
-                    username = payment_info["username"] # type: ignore
+                for unique_payment_id, payment_info in payments.items(): 
+                    username = payment_info["username"] 
                     total_price = payment_info["total_price"]
                     admin_message = f"Пользователь [{username}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
-                    # Отправляем сообщение админу с кликабельной ссылкой
                     keyboard = types.InlineKeyboardMarkup()
                     confirm_button = types.InlineKeyboardButton(
-                        text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{unique_payment_id}"
-                    )
-                    print(f"callback_data для кнопки: {confirm_button.callback_data}")  # Add this line
+                        text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{unique_payment_id}")
+
                     keyboard.add(confirm_button)
 
-                    # Отправляем сообщение с кликабельным именем
                     bot.send_message(message.chat.id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
         else:
             bot.send_message(message.chat.id, "Список пользователей, ожидающих подтверждения оплат пуст", parse_mode="Markdown")
@@ -410,8 +408,8 @@ def handle_poll_confirmation(bot, call):
         scheduled_date = poll_data[poll_id][0].get('scheduled_date')
         
         if scheduled_time and scheduled_date:
-            schedule_the_poll(bot, poll_id, scheduled_time)  # Schedule the poll
-            user_confirmed.clear()  # Сбрасываем словарь user_confirmed
+            schedule_the_poll(bot, poll_id, scheduled_time)  
+            user_confirmed.clear()  
         else:
             bot.send_message(chat_id, "Ошибка: Не установлены дата или время для отправки опроса.")
 
@@ -420,7 +418,7 @@ def handle_poll_confirmation(bot, call):
         if poll_id in poll_data:
             poll_data[poll_id].clear()
             save_polls(poll_data)
-            user_confirmed.clear() #  Сбрасываем словарь user_confirmed и при редактировании опроса
+            user_confirmed.clear() 
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(call.message, get_date, poll_id, bot)
 
@@ -434,29 +432,24 @@ def admin_confirm_payment(bot, call):
 
         if user_id in awaiting_confirmation:
             if unique_payment_id in awaiting_confirmation[user_id]:
-                print(f"Тип данных unique_payment_id: {type(unique_payment_id)}")
 
                 payment_info = awaiting_confirmation[user_id].pop(unique_payment_id)
-                print(f"payment_info: {payment_info}")
-                # Добавляем в confirmed_payments
+
                 if user_id not in confirmed_payments:
                     confirmed_payments[user_id] = []
                 confirmed_payments[user_id].append(payment_info["total_price"])
 
-                # Записываем в таблицу
                 record_payment(client, "Тренировки", int(user_id), int(payment_info["total_price"]))
             
                 bot.send_message(chat_id, "Оплата подтверждена и записана в таблицу.")
 
-                # Удаляем сообщение от админа
                 try:
                     bot.delete_message(call.message.chat.id, call.message.message_id)
                 except Exception as e:
                     print(f"Ошибка удаления сообщения подтверждения: {e}")
 
-                # Если у пользователя больше нет ожидающих подтверждения платежей, удаляем его из awaiting_confirmation
                 if user_id in awaiting_confirmation and not awaiting_confirmation[user_id]:
-                    del awaiting_confirmation[user_id] # <---- THIS IS THE KEY!!!!
+                    del awaiting_confirmation[user_id] 
             else:
                 bot.send_message(chat_id, "Ошибка: Оплата не найдена.")
         else:
@@ -479,8 +472,7 @@ def confirm_payment(bot, call):
 
    
     if user_id in awaiting_confirmation:
-        print(f"Пользователь {user_id} найден в awaiting_confirmation")
-        print(f"Данные из awaiting_confirmation {awaiting_confirmation}")
+
         full_name = awaiting_confirmation[user_id]["username"]["username"]
         confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
 
@@ -491,7 +483,6 @@ def confirm_payment(bot, call):
 
         del awaiting_confirmation[user_id]
 
-        # Отправка сообщения админу с кликабельным именем пользователя
         admin_message = f"Пользователь [{full_name}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
         admin_message = "Оплату нужно подтведить"
 

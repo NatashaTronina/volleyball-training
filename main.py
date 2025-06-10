@@ -52,22 +52,21 @@ def handle_admin_commands(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
-    print(f"Получен callback_query с данными: {call.data}")  # Add this line
+    print(f"Получен callback_query с данными: {call.data}")  
     if call.data.startswith("admin_confirm_") or call.data.startswith("poll_confirm") or call.data.startswith("poll_edit"):
-        print("Вызываем admin_handle_callback_query")  # Add this line
-        admin.admin_handle_callback_query(bot, call)  # Вызываем admin_handle_callback_query
+        print("Вызываем admin_handle_callback_query")  
+        admin.admin_handle_callback_query(bot, call)  
     else:
-        print("Вызываем users_handle_callback_query")  # Add this line
-        users.handle_callback_query(bot, call)  # Вызываем users_handle_callback_query
+        print("Вызываем users_handle_callback_query")  
+        users.handle_callback_query(bot, call)  
 
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):
     users.handle_poll_answer(bot, poll_answer)
 
-# Добавляем обработчик текстовых сообщений
-@bot.message_handler(func=lambda message: True)  # Обрабатывает все текстовые сообщения
+@bot.message_handler(func=lambda message: True)  
 def handle_all_text_messages(message):
-    users.handle_name_input(bot, message)  # Передаем управление в users.py
+    users.handle_name_input(bot, message)  
 
 if __name__ == '__main__':
     print("Бот запущен")
