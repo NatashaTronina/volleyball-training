@@ -8,7 +8,7 @@ from DATE import get_day_of_week
 from shared_data import awaiting_confirmation, confirmed_payments, save_polls, load_polls
 import threading
 import schedule
-from ggl import record_payment, authenticate_google_sheets
+from ggl import record_payment, authenticate_google_sheets, record_training_details
 from users import get_user_ids, user_confirmed, users
 
 ADMIN_ID = [494635818]
@@ -122,13 +122,19 @@ def get_price(message, poll_id, bot):
             poll_data[poll_id][-1]['price'] = price
             save_polls(poll_data)
 
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Гимназия"), types.KeyboardButton("Энергия"))
-        bot.send_message(message.chat.id, "Выберите место проведения тренировки:", reply_markup=keyboard)
-        bot.register_next_step_handler(message, get_location, poll_id, bot)
+            # Записываем дату и цену в таблицу
+            training_date = poll_data[poll_id][-1]['date']
+            record_training_details(client, "Тренировки", training_date, price)
+
+
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            keyboard.add(types.KeyboardButton("Гимназия"), types.KeyboardButton("Энергия"))
+            bot.send_message(message.chat.id, "Выберите место проведения тренировки:", reply_markup=keyboard)
+            bot.register_next_step_handler(message, get_location, poll_id, bot)
     except ValueError:
         bot.send_message(message.chat.id, "Неверный формат цены. Пожалуйста, введите число:")
         bot.register_next_step_handler(message, get_price, poll_id, bot)
+
 
 def get_location(message, poll_id, bot):
     location = message.text

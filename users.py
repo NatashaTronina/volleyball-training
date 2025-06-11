@@ -313,7 +313,6 @@ def send_payment_info(bot, user_id, training_info):
         "unique_payment_id": unique_payment_id
     }
 
-
 def confirm_answers(bot, call):
     user_id = call.from_user.id
     data = call.data.split("_")
@@ -363,6 +362,7 @@ def confirm_answers(bot, call):
 
             if not awaiting_confirmation[user_id]:
                 del awaiting_confirmation[user_id]
+
         if "confirm" in msgs:
             delete_message_safe(bot, chat_id, msgs["confirm"])
             message_ids.pop(user_id, None)  
@@ -371,6 +371,10 @@ def confirm_answers(bot, call):
             training_info['chat_id'] = users.get(user_id, {}).get('chat_id')  
             if training_info['chat_id']:  
                 schedule_qr_code_send(bot, user_id, training_info)
+
+        # Сбрасываем состояние user_confirmed после подтверждения
+        user_confirmed.clear()  # Добавлено здесь
+
         if total_price == "0":
             bot.send_message(chat_id, "Ваши ответы подтверждены. Спасибо!")
             user_confirmed[user_id] = False

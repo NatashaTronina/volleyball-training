@@ -135,3 +135,31 @@ def record_payment(client, spreadsheet_name, user_id, total_price):
             print(f"User  ID '{user_id}' не найден в листе 'В.Приход'.")
     except Exception as e:
         print(f"Ошибка при записи платежа: {e}")
+
+def record_training_details(client, spreadsheet_name, training_date, training_price):
+    """Запись даты в 4-ю строку и цены в 3-ю строку на листе 'В.Расход' по столбцам."""
+    if client is None:
+        print("Ошибка: клиент Google Sheets не инициализирован.")
+        return
+
+    try:
+        sheet = client.open(spreadsheet_name)
+        worksheet = sheet.worksheet("В.Расход")
+
+        # Получаем значения 4-й строки — даты
+        dates_row = worksheet.row_values(4)
+
+        # Ищем первый пустой столбец в 4-й строке (даты)
+        # Если строка пустая, то длинна может быть меньше реальных столбцов
+        next_col_index = len(dates_row) + 1  # Так как индексация с 1
+
+        # Записываем дату тренировки в строку 4, в найденный столбец
+        worksheet.update_cell(4, next_col_index, training_date)
+
+        # Записываем цену тренировки в строку 3 в тот же столбец
+        worksheet.update_cell(3, next_col_index, str(training_price))
+
+        print(f"Дата тренировки '{training_date}' и цена '{training_price}' записаны в столбец {next_col_index} на листе 'В.Расход'.")
+    except Exception as e:
+        print(f"Ошибка при записи данных о тренировке: {e}")
+
