@@ -8,7 +8,7 @@ from DATE import get_day_of_week
 from shared_data import awaiting_confirmation, confirmed_payments, save_polls, load_polls
 import threading
 import schedule
-from ggl import record_payment, authenticate_google_sheets, record_training_details
+from ggl import record_payment, authenticate_google_sheets, record_training_details, update_training_status
 from users import get_user_ids, user_confirmed, users
 
 ADMIN_ID = [494635818]
@@ -49,7 +49,6 @@ def create_poll_command(bot, message):
         latest_poll["id"] = poll_id
         poll_data[poll_id] = []
 
-        # Очищаем user_confirmed при создании нового опроса
         user_confirmed.clear()
 
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
@@ -122,7 +121,6 @@ def get_price(message, poll_id, bot):
             poll_data[poll_id][-1]['price'] = price
             save_polls(poll_data)
 
-            # Записываем дату и цену в таблицу
             training_date = poll_data[poll_id][-1]['date']
             record_training_details(client, "Тренировки", training_date, price)
 
@@ -202,7 +200,7 @@ def handle_next_action_choice(message, poll_id, bot):
             save_polls(poll_data)
             user_confirmed.clear()
         bot.send_message(chat_id, "Создание опроса отменено.")
-        return  # Важно: прерываем цепочку обработчиков
+        return 
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных")
 
@@ -397,7 +395,6 @@ def get_latest_poll():
 def check_payments(bot, message):
     if is_admin(message):
         if awaiting_confirmation:
-
             text = "Список ожидающих подтверждения оплат:\n"
 
             for user_id, payments in awaiting_confirmation.items():
@@ -451,8 +448,7 @@ def handle_poll_confirmation(bot, call):
             user_confirmed.clear() 
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(call.message, get_date, poll_id, bot)
-    
-    
+
 
 def admin_confirm_payment(bot, call):
     admin_id = call.from_user.id
@@ -463,15 +459,18 @@ def admin_confirm_payment(bot, call):
 
         if user_id in awaiting_confirmation:
             if unique_payment_id in awaiting_confirmation[user_id]:
-
                 payment_info = awaiting_confirmation[user_id].pop(unique_payment_id)
+                total_price = payment_info['total_price']  
 
                 if user_id not in confirmed_payments:
                     confirmed_payments[user_id] = []
-                confirmed_payments[user_id].append(payment_info["total_price"])
+                confirmed_payments[user_id].append(total_price)
 
                 record_payment(client, "Тренировки", int(user_id), int(payment_info["total_price"]))
-            
+
+
+                update_training_status(client, "Тренировки", user_id, payment_info, "1")
+
                 bot.send_message(chat_id, "Оплата подтверждена и записана в таблицу.")
 
                 try:
@@ -480,7 +479,7 @@ def admin_confirm_payment(bot, call):
                     print(f"Ошибка удаления сообщения подтверждения: {e}")
 
                 if user_id in awaiting_confirmation and not awaiting_confirmation[user_id]:
-                    del awaiting_confirmation[user_id] 
+                    del awaiting_confirmation[user_id]
             else:
                 bot.send_message(chat_id, "Ошибка: Оплата не найдена.")
         else:
@@ -501,40 +500,45 @@ def confirm_payment(bot, call):
     chat_id = call.message.chat.id
     total_price = call.data.split("_")[-1]
 
-   
+    print(f"confirm_payment: user_id={user_id}, total_price={total_price}")
+
     if user_id in awaiting_confirmation:
+        for unique_payment_id, payment_info in awaiting_confirmation[user_id].items():
+            print(f"confirm_payment: Checking payment {unique_payment_id} with price {payment_info['total_price']}")
+            if str(payment_info['total_price']) == total_price:
+                full_name = payment_info["username"]
+                confirm_message_id = payment_info["confirm_message_id"]
 
-        full_name = awaiting_confirmation[user_id]["username"]["username"]
-        confirm_message_id = awaiting_confirmation[user_id]["confirm_message_id"]
+                try:
+                    bot.delete_message(chat_id, confirm_message_id)
+                    print(f"confirm_payment: Deleted user confirmation message {confirm_message_id}")
+                except Exception as e:
+                    print(f"confirm_payment: Error deleting user confirmation message: {e}")
 
-        try:
-           bot.delete_message(chat_id, confirm_message_id)
-        except Exception as e:
-           print(f"Error deleting confirmation message: {e}")
+                admin_message = f"Пользователь [{full_name}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
+                admin_message = "Оплату нужно подтведить"
 
-        del awaiting_confirmation[user_id]
+                keyboard = types.InlineKeyboardMarkup()
+                confirm_button = types.InlineKeyboardButton(
+                    text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{unique_payment_id}"
+                )
+                keyboard.add(confirm_button)
+                bot.send_message(chat_id, f"Оплату нужно подтвердить вручную")
 
-        admin_message = f"Пользователь [{full_name}](tg://user?id={user_id}) ожидает подтверждение оплаты на сумму {total_price} руб."
-        admin_message = "Оплату нужно подтведить"
+                for admin_id in ADMIN_ID:
+                    bot.send_message(admin_id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
 
-        keyboard = types.InlineKeyboardMarkup()
-        confirm_button = types.InlineKeyboardButton(
-           text="Подтвердить оплату", callback_data=f"admin_confirm_{user_id}_{total_price}"
-        )
-        keyboard.add(confirm_button)
-        bot.send_message(chat_id, f"Оплату нужно подтвердить вручную")
+                return  
 
-        for admin_id in ADMIN_ID:
-           bot.send_message(admin_id, admin_message, reply_markup=keyboard, parse_mode="Markdown")
+        bot.send_message(chat_id, "Ошибка: Соответствующая оплата не найдена.")
     else:
         bot.send_message(chat_id, "Ошибка: Оплата не найдена.")
         bot.send_message(chat_id, "Ошибка: Запрос на подтверждение не найден.")
 
-
 def schedule_poll(bot):
     while True:
         send_scheduled_poll(bot)
-        time.sleep(60) 
+        time.sleep(60)
 
 def start_poll_scheduler(bot):
     def run_scheduler():
@@ -543,6 +547,6 @@ def start_poll_scheduler(bot):
                 schedule.run_pending()
             except Exception as e:
                 print(f"Произошла ошибка в планировщике: {e}")
-            time.sleep(60) 
+            time.sleep(60)
 
     threading.Thread(target=run_scheduler, daemon=True).start()
