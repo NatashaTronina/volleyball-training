@@ -32,15 +32,13 @@ def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
         return
 
     sheet = client.open(spreadsheet_name)
-    sheets_to_check = ["В.Расход", "В.Приход"]
+    sheets_to_check = ["В.Расход"]
 
     normalized_name, name_parts = normalize_name(full_name)
 
     for sheet_name in sheets_to_check:
         worksheet = sheet.worksheet(sheet_name)
         column_data = worksheet.col_values(1) 
-
-        print(f"Проверяем в листе '{sheet_name}':")
 
         name_found = False 
 
@@ -57,7 +55,6 @@ def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
                 if input_first_name in table_first_name:
                     row_index = i + 1
                     worksheet.update_cell(row_index, 2, str(user_id))
-                    print(f"Записан user_id '{user_id}' для '{table_name}' в строке {row_index}.")
                     name_found = True
                     break
 
@@ -67,23 +64,16 @@ def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
                      if part in table_name:
                         row_index = i + 1
                         worksheet.update_cell(row_index, 2, str(user_id))
-                        print(f"Записан user_id '{user_id}' для '{table_name}' в строке {row_index}.")
                         name_found = True
                         break
                 if name_found:
                     break
 
-        if not name_found:
-            print(f"ФИО '{full_name}' не найдено в листе '{sheet_name}'.")
-
 def record_payment(client, spreadsheet_name, user_id, total_price):
-    """Запись даты и суммы оплаты в лист 'В.Приход'."""
     if client is None:
-        print("Ошибка: клиент Google Sheets не инициализирован.")
         return
 
     def remove_leading_zeros(date_string):
-        """Удаляет ведущие нули из дня и месяца в дате."""
         parts = date_string.split('.')
         if len(parts) == 3:
             day = str(int(parts[0]))
@@ -121,7 +111,6 @@ def record_payment(client, spreadsheet_name, user_id, total_price):
                     try:
                         total_price = float(total_price) + float(existing_amount)
                     except ValueError:
-                        print(f"Ошибка: Не удалось преобразовать существующую сумму '{existing_amount}' в число.")
                         total_price = float(total_price) 
                 worksheet.update_cell(row_index, date_column_index, total_price)
 
@@ -131,17 +120,12 @@ def record_payment(client, spreadsheet_name, user_id, total_price):
 
                 worksheet.update_cell(2, next_column_index, current_date_no_zeros) 
                 worksheet.update_cell(row_index, next_column_index, total_price)
-                print(f"Сумма {total_price} записана в строку {row_index}, столбец {next_column_index} (создана новая дата).")
-        else:
-            print(f"User  ID '{user_id}' не найден в листе 'В.Приход'.")
     except Exception as e:
         print(f"Ошибка при записи платежа: {e}")
 
 
 def record_training_details(client, spreadsheet_name, training_date, training_price):
-    """Запись даты в 4-ю строку и цены в 3-ю строку на листе 'В.Расход' по столбцам."""
     if client is None:
-        print("Ошибка: клиент Google Sheets не инициализирован.")
         return
 
     try:
@@ -157,49 +141,36 @@ def record_training_details(client, spreadsheet_name, training_date, training_pr
 
         worksheet.update_cell(3, next_col_index, str(training_price))
 
-        print(f"Дата тренировки '{training_date}' и цена '{training_price}' записаны в столбец {next_col_index} на листе 'В.Расход'.")
     except Exception as e:
         print(f"Ошибка при записи данных о тренировке: {e}")
 
+
 def update_training_status(client, spreadsheet_name, user_id, training_info, status):
-    """Обновляет статус тренировки в листе 'В.Расход'."""
     if client is None:
-        print("Ошибка: клиент OpenAI Sheets не инициализирован.")
         return
 
     try:
         sheet = client.open(spreadsheet_name)
         worksheet = sheet.worksheet("В.Расход")
 
-        user_ids = worksheet.col_values(2) 
+        user_ids = worksheet.col_values(2)
         if str(user_id) in user_ids:
-            row_index = user_ids.index(str(user_id)) + 1 
+            row_index = user_ids.index(str(user_id)) + 1
 
             training_date = training_info['date']
             training_price = str(training_info['price'])
 
-            header_row = worksheet.row_values(4) 
+            header_row = worksheet.row_values(4)
             date_column_index = None
 
             for i, header in enumerate(header_row):
-                if header == training_date: 
-                    price_row = worksheet.row_values(3) 
+                if header == training_date:
+                    price_row = worksheet.row_values(3)
                     if i < len(price_row) and price_row[i] == training_price:
-                        date_column_index = i + 1 
+                        date_column_index = i + 1
                         break
 
             if date_column_index:
                 worksheet.update_cell(row_index, date_column_index, status)
-                print(
-                    f"Обновлен статус на '{status}' для user_id '{user_id}' на дату '{training_date}' и цену '{training_price}' в ячейке R{row_index}C{date_column_index}."
-                )
-            else:
-                print(f"Дата '{training_date}' с ценой '{training_price}' не найдена в заголовках столбцов.")
-        else:
-            print(f"User_id '{user_id}' не найден в столбце user_ids.")
-
-    except Exception as e:
-        print(f"Ошибка при обновлении статуса тренировки в OpenAI Sheets: {e}")
-
     except Exception as e:
         print(f"Ошибка при обновлении статуса тренировки в OpenAI Sheets: {e}")

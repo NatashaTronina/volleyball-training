@@ -9,6 +9,10 @@ import admin
 from ggl import write_name_to_google_sheet, authenticate_google_sheets, update_training_status
 import schedule
 import uuid
+import time
+
+USER_TRAININGS_CACHE = {}
+CACHE_EXPIRATION_TIME = 600
 
 users = {}
 ADMIN_ID = [494635818]
@@ -101,25 +105,94 @@ def handle_name_input(bot, message):
 
 def status(bot, message):
     user_id = message.from_user.id
-    if user_id in users:
-        try:
-            status_message = ""
-            if user_id in awaiting_confirmation:
-                status_message += "Ожидают подтверждения:\n"
-                for payment_id, payment_info in awaiting_confirmation[user_id].items():
-                    status_message += f"- {payment_info['total_price']} руб.\n"
+    chat_id = message.chat.id
 
-            if user_id in confirmed_payments:
-                status_message += "Подтверждены:\n"
-                for price in confirmed_payments[user_id]:
-                    status_message += f"- {price} руб.\n"
-            if not status_message:
-                status_message = "У вас нет активных оплат."
-            bot.reply_to(message, status_message)
-        except Exception as e:
-            bot.reply_to(message, f"Ошибка при проверке статуса оплаты: {e}")
-    else:
+    if user_id not in users:
         bot.reply_to(message, "Пожалуйста, сначала используйте команду /start, чтобы зарегистрироваться.")
+        return
+
+    try:
+        training_list = get_user_trainings(bot, user_id)
+        message_text = "Ваш статус:\n"
+
+        if not training_list:
+            message_text += "Нет активных тренировок\n"
+        else:
+            last_trainings = training_list[-3:]
+            for i, training in enumerate(last_trainings):
+                message_text += f"{i+1}) {training['date']} ({training['price']} руб) : {training['status']}\n"
+
+        keyboard = types.InlineKeyboardMarkup()
+        cancel_button = types.InlineKeyboardButton(text="Отменить тренировки", callback_data="cancel_trainings")
+        keyboard.add(cancel_button)
+
+        bot.send_message(chat_id, message_text, reply_markup=keyboard)
+
+    except Exception as e:
+        bot.reply_to(message, f"Ошибка при проверке статуса: {e}")
+
+def get_user_trainings(bot, user_id):
+
+    try:
+        sheet = client.open("Тренировки")
+        worksheet = sheet.worksheet("В.Расход")
+
+        user_ids = worksheet.col_values(2)
+
+
+        training_list = []
+
+        if str(user_id) in user_ids:
+            row_index = user_ids.index(str(user_id)) + 1
+            print(f"get_user_trainings: Найдена строка для user_id {user_id}: {row_index}")
+
+            data_range = f'R{row_index}C10:R{row_index}C{worksheet.col_count}'
+            header_range = '4:4'  
+            price_range = '3:3'
+
+            batch_result = worksheet.batch_get([data_range, header_range, price_range])
+
+            if len(batch_result) == 3:
+                row_data = batch_result[0][0] if batch_result[0] else []
+                header_row = batch_result[1][0] if batch_result[1] else []
+                price_row = batch_result[2][0] if batch_result[2] else []
+
+                selected_training_infos = get_selected_trainings_from_poll()
+
+
+                for i, status in enumerate(row_data):
+                    if i < len(header_row) and i < len(price_row): 
+                        training_info = {'date': header_row[i + 9], 'price': price_row[i+9]}
+                        if training_info in selected_training_infos:
+                            if status in ("*", "0", "1"):
+                                status = "Ожидает оплаты" if status == "*" else (
+                                    "Оплата ожидает подтверждения" if status == "0" else "Оплачено")
+                                training = {
+                                    "date": header_row[i + 9], 
+                                    "price": price_row[i + 9], 
+                                    "status": status 
+                                }
+                                training_list.append(training)
+        return training_list
+
+    except Exception as e:
+        print(f"get_user_trainings: Ошибка при получении тренировок: {e}")
+        return []
+    
+def get_selected_trainings_from_poll():
+    latest_poll = load_latest_poll()
+    selected_training_infos = []
+    if latest_poll:
+        poll_id, poll_data_item = list(latest_poll.items())[0]
+        if isinstance(poll_data_item, list):
+            for option in poll_data_item:
+                if isinstance(option, dict) and 'date' in option and 'price' in option:
+                   selected_training_infos.append({'date': option['date'], 'price': str(option['price'])})
+    return selected_training_infos
+
+def clear_user_trainings_cache(user_id):
+    if user_id in USER_TRAININGS_CACHE:
+        del USER_TRAININGS_CACHE[user_id]
 
 def help_command(bot, message):
     help_text = """
@@ -327,6 +400,8 @@ def confirm_answers(bot, call):
 
     poll_id = data[1]
     total_price = data[2]
+    selected_indices = data[3].split(',')
+
 
     msgs = message_ids.get(user_id, {})
     message_ids.pop(user_id, None)
@@ -336,14 +411,33 @@ def confirm_answers(bot, call):
     if latest_poll:
         poll_id, poll_data_item = list(latest_poll.items())[0]
 
+
         selected_training_infos = []
-        for option in poll_data_item:
-            if isinstance(option, dict):
-                selected_training_infos.append(option)
+
+        if len(selected_indices) == 1 and int(selected_indices[0]) == len(poll_data_item):
+            if "confirm" in msgs:
+                delete_message_safe(bot, chat_id, msgs["confirm"])
+                message_ids.pop(user_id, None)
+
+            bot.send_message(chat_id, "Спасибо за ответы!")
+            return
+        else:
+            for index in selected_indices:
+                try:
+                    index = int(index)
+                    selected_training_infos.append(poll_data_item[index])
+                except ValueError as e:
+                    print(f"confirm_answers: Некорректный индекс: {index}, Ошибка: {e}")
+                except IndexError as e:
+                    print(f"confirm_answers: Индекс за пределами списка: {index}, Ошибка: {e}")
+
 
         if "confirm" in msgs:
             delete_message_safe(bot, chat_id, msgs["confirm"])
             message_ids.pop(user_id, None)
+        if not selected_training_infos:
+            bot.send_message(chat_id, "Вы не выбрали ни одной тренировки.")
+            return
 
         bot.send_message(chat_id, "Ожидайте QR-код для выбранных тренировок")
 
@@ -351,7 +445,7 @@ def confirm_answers(bot, call):
             training_info['chat_id'] = users.get(user_id, {}).get('chat_id')
             if training_info['chat_id']:
                 schedule_qr_code_send(bot, user_id, training_info)
-                update_training_status(client, "Тренировки", user_id, training_info, "+") 
+                update_training_status(client, "Тренировки", user_id, training_info, "*")
 
         user_confirmed.clear()
 
@@ -389,6 +483,7 @@ def resend_payment(bot, call):
         bot.answer_callback_query(call.id, "Реквизиты отправлены заново.")
     else:
         bot.send_message(chat_id, "Нет активных опросов.")
+
 
 def cancel_payment(bot, call):
     user_id = call.from_user.id
@@ -433,6 +528,7 @@ def payment_confirmation(bot, call):
 
             bot.send_message(chat_id, "Спасибо за оплату! Чтобы отслеживать статус тренировки и подтверждение оплаты нажмите команду /status")
             update_training_status(client, "Тренировки", user_id, payment_info, "0")
+            clear_user_trainings_cache(user_id)
         else:
             bot.send_message(chat_id, "Ошибка: Оплата не найдена.")
 
@@ -446,6 +542,75 @@ def delete_message_safe(bot, chat_id, message_id):
     except Exception as e:
         print(f"delete_message_safe: Не удалось удалить сообщение {message_id} в чате {chat_id}: {e}")
 
+def show_cancel_options(bot, call):
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+
+    training_list = get_user_trainings(bot, user_id)
+
+    if not training_list:
+        bot.send_message(chat_id, "Вы не записаны ни на одну тренировку.")
+        return
+
+    keyboard = types.InlineKeyboardMarkup(row_width=3)
+    for i, training in enumerate(training_list):
+        button = types.InlineKeyboardButton(
+            text=f"{i + 1}) {training['date']} ({training['price']} руб)",
+            callback_data=f"cancel_training_confirmed_{i}"
+        )
+        keyboard.add(button)
+
+    bot.send_message(chat_id, "Выберите тренировку для отмены:", reply_markup=keyboard)
+
+
+def cancel_training(bot, user_id, training_to_cancel):
+    try:
+        sheet = client.open("Тренировки")
+        worksheet = sheet.worksheet("В.Расход")
+
+        user_ids = worksheet.col_values(2)
+        if str(user_id) in user_ids:
+            row_index = user_ids.index(str(user_id)) + 1
+
+            training_date = training_to_cancel['date']
+            training_price = str(training_to_cancel['price'])
+
+            header_row = worksheet.row_values(4)
+            date_column_index = None
+
+            for i, header in enumerate(header_row):
+                if header == training_date:
+                    price_row = worksheet.row_values(3)
+                    if i < len(price_row) and price_row[i] == training_price:
+                        date_column_index = i + 1
+                        break
+
+            if date_column_index:
+                worksheet.update_cell(row_index, date_column_index, "")  
+    except Exception as e:
+        print(f"Ошибка при отмене тренировки в Google Sheets: {e}")
+
+def cancel_training_confirmed(bot, call):
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    training_index = int(call.data.split("_")[-1])
+
+    training_list = get_user_trainings(bot, user_id)
+
+    if not training_list:
+        bot.send_message(chat_id, "У вас нет записанных тренировок для отмены.")
+        return
+
+    if 0 <= training_index < len(training_list):
+        training_to_cancel = training_list[training_index]
+
+        cancel_training(bot, user_id, training_to_cancel)
+
+        message_text = f"Тренировка {training_to_cancel['date']} успешно отменена."
+        bot.send_message(chat_id, message_text)
+    else:
+        bot.send_message(chat_id, "Неверный номер тренировки для отмены.")
+
 def handle_callback_query(bot, call):
     if call.data.startswith("cancel_payment_"):
         cancel_payment(bot, call)
@@ -457,6 +622,11 @@ def handle_callback_query(bot, call):
         resend_payment(bot, call)
     elif call.data.startswith("re"):
         confirm_answers(bot, call)
+    elif call.data == "cancel_trainings":
+        show_cancel_options(bot, call)
+    elif call.data.startswith("cancel_training_confirmed_"):
+        cancel_training_confirmed(bot, call)
+
 def run_scheduler():
     while True:
         schedule.run_pending()
