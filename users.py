@@ -562,7 +562,6 @@ def show_cancel_options(bot, call):
 
     bot.send_message(chat_id, "Выберите тренировку для отмены:", reply_markup=keyboard)
 
-
 def cancel_training(bot, user_id, training_to_cancel):
     try:
         sheet = client.open("Тренировки")
@@ -586,7 +585,12 @@ def cancel_training(bot, user_id, training_to_cancel):
                         break
 
             if date_column_index:
-                worksheet.update_cell(row_index, date_column_index, "")  
+                cell_value = worksheet.cell(row_index, date_column_index).value
+
+                if cell_value in ("0", "1"):
+                    worksheet.update_cell(row_index, date_column_index, "0")
+                elif cell_value == "*":
+                    worksheet.update_cell(row_index, date_column_index, "")
     except Exception as e:
         print(f"Ошибка при отмене тренировки в Google Sheets: {e}")
 

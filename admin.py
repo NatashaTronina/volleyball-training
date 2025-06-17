@@ -30,8 +30,7 @@ def set_commands(bot):
         admin_commands = [
             telebot.types.BotCommand("create_poll", "Создать опрос"),
             telebot.types.BotCommand("check_payments", "Проверить статусы оплат"),
-            telebot.types.BotCommand('edit_list', "Редактировать список"),
-            telebot.types.BotCommand('confirm_list', "Подтвердить список"),
+            telebot.types.BotCommand('check_list', "Посмотреть список"),
         ]
         bot.set_my_commands(commands=admin_commands, scope=admin_scope)
 

@@ -40,7 +40,7 @@ def handle_user_other_commands(message):
     elif message.text == '/voting':
         users.voting(bot, message)
 
-@bot.message_handler(commands=['create_poll', 'check_payments', 'edit_list', 'confirm_list'])
+@bot.message_handler(commands=['create_poll', 'check_payments', 'check_list'])
 def handle_admin_commands(message):
     if not is_admin(message):
         return
@@ -48,8 +48,6 @@ def handle_admin_commands(message):
         admin.create_poll_command(bot, message)
     elif message.text == '/check_payments':
         admin.check_payments(bot, message)
-    elif message.text == '/edit_list':
-        admin.edit_list_command(bot, message)
     elif message.text == '/confirm_list':
         admin.confirm_list_command(bot, message)
 
