@@ -3,10 +3,9 @@ from google.oauth2.service_account import Credentials
 import datetime
 import re
 from collections import defaultdict
-
+import time
 
 cache = defaultdict(dict)
-
 
 def authenticate_google_sheets(json_file):
     """Аутентификация и получение клиента для работы с Google Sheets."""
@@ -159,18 +158,109 @@ def update_training_status(client, spreadsheet_name, user_id, training_info, sta
 
             training_date = training_info['date']
             training_price = str(training_info['price'])
-
             header_row = worksheet.row_values(4)
-            date_column_index = None
+            
+            col_index = None
 
-            for i, header in enumerate(header_row):
+            for i in reversed(range(len(header_row))):
+                header = header_row[i]
                 if header == training_date:
                     price_row = worksheet.row_values(3)
-                    if i < len(price_row) and price_row[i] == training_price:
-                        date_column_index = i + 1
+                    if i < len(price_row) and str(price_row[i]) == training_price:
+                        col_index = i + 1
                         break
 
-            if date_column_index:
-                worksheet.update_cell(row_index, date_column_index, status)
+            if col_index is None:
+                return
+
+            if col_index:
+                worksheet.update_cell(row_index, col_index, status)
     except Exception as e:
         print(f"Ошибка при обновлении статуса тренировки в OpenAI Sheets: {e}")
+
+
+
+def get_participants_for_training(client, spreadsheet_name, training_date, training_price):
+    if client is None:
+        return []
+
+    cache_key = f"{training_date}_{training_price}"
+
+    cached_data = cache.get(cache_key)
+    if cached_data and 'timestamp' in cached_data and \
+            datetime.datetime.now() - cached_data['timestamp'] < datetime.timedelta(minutes=1):
+        return cached_data['participants']
+    else:
+        print(f"get_participants_for_training: Кэш не найден или устарел")
+
+    try:
+        sheet = client.open(spreadsheet_name)
+        worksheet = sheet.worksheet("В.Расход")
+        
+        all_data = worksheet.get_all_values()[4:]
+        header_row = worksheet.row_values(4)
+        
+        col_index = None
+        for i in reversed(range(len(header_row))):
+            header = header_row[i]
+            if header == training_date:
+                price_row = worksheet.row_values(3)
+                if i < len(price_row) and str(price_row[i]) == training_price:
+                    col_index = i + 1
+                    break
+
+        if col_index is None:
+            return []
+
+        participants = []
+        for i, row in enumerate(all_data):
+            if len(row) > col_index - 1:
+                status = row[col_index - 1]
+                name = row[0]
+                if status in ("*", "1", "0"):
+                    participants.append({"name": name, "status": status})
+            time.sleep(0.1)
+
+        cache[cache_key] = {'participants': participants, 'timestamp': datetime.datetime.now()}
+        return participants
+
+    except Exception as e:
+        print(f"get_participants_for_training: Произошла ошибка: {e}")
+        return []
+    
+def cancel_training_for_user(client, spreadsheet_name, training_date, training_price, user):
+    try:
+        sheet = client.open(spreadsheet_name)
+        worksheet = sheet.worksheet("В.Расход")
+        names_col = worksheet.col_values(1)
+        header_row = worksheet.row_values(4)
+
+        user_name = user['name']
+        row_index = None
+        for i, name in enumerate(names_col):
+            if name == user_name:
+                row_index = i + 1
+                break
+        if row_index is None:
+            return
+        
+        col_index = None
+        for i in reversed(range(len(header_row))):
+            header = header_row[i]
+            if header == training_date:
+                price_row = worksheet.row_values(3)
+                if i < len(price_row) and str(price_row[i]) == training_price:
+                    col_index = i + 1
+                    break
+
+        if col_index is None:
+            return
+        
+        cell_value = worksheet.cell(row_index, col_index).value
+        if cell_value == "1":
+            worksheet.update_cell(row_index, col_index, "0")
+        elif cell_value == "*":
+            worksheet.update_cell(row_index, col_index, "")
+ 
+    except Exception as e:
+        print(f"Error during cancelling training for user in Google Sheets: {e}")

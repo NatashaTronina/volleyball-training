@@ -144,7 +144,6 @@ def get_user_trainings(bot, user_id):
 
         if str(user_id) in user_ids:
             row_index = user_ids.index(str(user_id)) + 1
-            print(f"get_user_trainings: Найдена строка для user_id {user_id}: {row_index}")
 
             data_range = f'R{row_index}C10:R{row_index}C{worksheet.col_count}'
             header_range = '4:4'  
@@ -166,7 +165,7 @@ def get_user_trainings(bot, user_id):
                         if training_info in selected_training_infos:
                             if status in ("*", "0", "1"):
                                 status = "Ожидает оплаты" if status == "*" else (
-                                    "Оплата ожидает подтверждения" if status == "0" else "Оплачено")
+                                    "Оплата ожидает подтверждения" if status == "0" else "Админ подтвердил оплату")
                                 training = {
                                     "date": header_row[i + 9], 
                                     "price": price_row[i + 9], 
@@ -345,7 +344,6 @@ def send_payment_info(bot, user_id, training_info):
         reply_markup=keyboard  
     )
     bio.close()
-
     username = users.get(user_id, {}).get('username', "Неизвестный пользователь") 
 
     unique_payment_id = str(uuid.uuid4())
@@ -372,7 +370,6 @@ def send_payment_info(bot, user_id, training_info):
         "total_price": training_info['price'],
         "unique_payment_id": unique_payment_id,
         "date": training_info['date'], 
-        "year": training_info['year'],
         "price": training_info['price']
     }
 

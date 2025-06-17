@@ -3,9 +3,7 @@ import json
 import admin
 import users
 import threading
-from admin import is_admin, admin_confirm_payment
-from users import handle_poll_answer as users_handle_poll_answer
-from users import handle_callback_query
+from admin import is_admin
 from shared_data import load_polls
 from ggl import authenticate_google_sheets
 
@@ -48,17 +46,16 @@ def handle_admin_commands(message):
         admin.create_poll_command(bot, message)
     elif message.text == '/check_payments':
         admin.check_payments(bot, message)
-    elif message.text == '/confirm_list':
-        admin.confirm_list_command(bot, message)
+    elif message.text == '/check_list': 
+        admin.check_list_command(bot, message)
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
-    print(f"Получен callback_query с данными: {call.data}")  
-    if call.data.startswith("admin_confirm_") or call.data.startswith('poll_confirm') or call.data.startswith('poll_edit') or call.data.startswith("cancel_creation_"):
-        print("Вызываем admin_handle_callback_query")  
+    if (call.data.startswith("training_selected_") or call.data.startswith("edit_list_") or call.data.startswith("remove_user_") 
+        or call.data.startswith("admin_confirm_") or call.data.startswith('poll_confirm') or call.data.startswith('poll_edit') 
+        or call.data.startswith("cancel_creation_")):
         admin.admin_handle_callback_query(bot, call)  
     else:
-        print("Вызываем users_handle_callback_query")  
         users.handle_callback_query(bot, call)  
 
 @bot.poll_answer_handler()
@@ -68,8 +65,9 @@ def handle_poll_answer(poll_answer):
 @bot.message_handler(func=lambda message: True)  
 def handle_all_text_messages(message):
     if message.text.startswith('/'):
-        return  # Не сбрасываем обработчик для команд
+        return
     users.handle_name_input(bot, message)
+
 
 if __name__ == '__main__':
     print("Бот запущен")
