@@ -4,7 +4,7 @@ import qrcode
 from io import BytesIO
 import datetime
 import time
-from shared_data import awaiting_confirmation, confirmed_payments
+from shared_data import awaiting_confirmation
 import admin
 from ggl import write_name_to_google_sheet, authenticate_google_sheets, update_training_status
 import schedule
@@ -126,8 +126,9 @@ def status(bot, message):
         cancel_button = types.InlineKeyboardButton(text="Отменить тренировки", callback_data="cancel_trainings")
         keyboard.add(cancel_button)
 
-        bot.send_message(chat_id, message_text, reply_markup=keyboard)
-
+        status_message = bot.send_message(chat_id, message_text, reply_markup=keyboard) 
+        users[user_id]['status_message_id'] = status_message.message_id 
+            
     except Exception as e:
         bot.reply_to(message, f"Ошибка при проверке статуса: {e}")
 
@@ -574,8 +575,8 @@ def cancel_training(bot, user_id, training_to_cancel):
             header_row = worksheet.row_values(4)
             date_column_index = None
 
-            for i, header in enumerate(header_row):
-                if header == training_date:
+            for i in reversed(range(len(header_row))):
+                if header_row[i] == training_date:
                     price_row = worksheet.row_values(3)
                     if i < len(price_row) and price_row[i] == training_price:
                         date_column_index = i + 1
@@ -585,7 +586,7 @@ def cancel_training(bot, user_id, training_to_cancel):
                 cell_value = worksheet.cell(row_index, date_column_index).value
 
                 if cell_value in ("0", "1"):
-                    worksheet.update_cell(row_index, date_column_index, "0")
+                    worksheet.update_cell(row_index, date_column_index, "#")
                 elif cell_value == "*":
                     worksheet.update_cell(row_index, date_column_index, "")
     except Exception as e:
@@ -609,6 +610,17 @@ def cancel_training_confirmed(bot, call):
 
         message_text = f"Тренировка {training_to_cancel['date']} успешно отменена."
         bot.send_message(chat_id, message_text)
+        try:
+            bot.delete_message(chat_id, call.message.message_id)
+        except Exception as e:
+            print(f"Ошибка при удалении сообщения с выбором тренировки: {e}")
+
+        if 'status_message_id' in users[user_id]:
+            try:
+                bot.delete_message(chat_id, users[user_id]['status_message_id']) 
+                del users[user_id]['status_message_id']
+            except Exception as e:
+                print(f"Ошибка при удалении сообщения 'Ваш статус:': {e}")
     else:
         bot.send_message(chat_id, "Неверный номер тренировки для отмены.")
 
