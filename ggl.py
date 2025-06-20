@@ -4,6 +4,7 @@ import datetime
 import re
 from collections import defaultdict
 import time
+import numpy as np
 
 cache = defaultdict(dict)
 
@@ -20,27 +21,33 @@ def authenticate_google_sheets(json_file):
 
 def normalize_name(full_name):
     normalized = full_name.strip()
-    parts = re.findall(r'(\w+\s+\w+)', full_name)  
+    parts = re.findall(r'(\w+\s+\w+)', full_name)
     brackets = re.findall(r'\((.*?)\)', full_name)
     for bracket in brackets:
         parts.append(bracket.strip())
-    return normalized, parts  
+    return normalized, parts
 
 def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
     if client is None:
         return
 
     sheet = client.open(spreadsheet_name)
-    sheets_to_check = ["В.Расход"]
+    sheets_to_check = ["В.Расход", "В.Приход"]
 
     normalized_name, name_parts = normalize_name(full_name)
 
     for sheet_name in sheets_to_check:
         worksheet = sheet.worksheet(sheet_name)
-        column_data = worksheet.col_values(1) 
 
-        name_found = False 
+        start_time = time.time()
 
+        # 1. Получаем все значения из первого столбца
+        column_data = worksheet.col_values(1)
+
+        end_time = time.time()
+        print(f"write_name_to_google_sheet: Данные получены за {end_time - start_time:.4f} секунд")
+
+        name_found = False
         input_name_parts = normalized_name.split()
         input_first_name = input_name_parts[0]
 
@@ -85,15 +92,20 @@ def record_payment(client, spreadsheet_name, user_id, total_price):
         sheet = client.open(spreadsheet_name)
         worksheet = sheet.worksheet("В.Приход")
 
+        start_time = time.time()
+
+        # 1. Получаем данные из столбцов 2 и 3
+        dates = worksheet.row_values(2)
+        user_ids = worksheet.col_values(2)
+
+        end_time = time.time()
+        print(f"record_payment: Данные получены за {end_time - start_time:.4f} секунд")
+
         current_date = datetime.datetime.now().strftime("%d.%m.%y")
-        current_date_no_zeros = remove_leading_zeros(current_date) 
+        current_date_no_zeros = remove_leading_zeros(current_date)
 
-
-        user_ids = worksheet.col_values(2) 
         if str(user_id) in user_ids:
             row_index = user_ids.index(str(user_id)) + 1
-
-            dates = worksheet.row_values(2)
 
             dates_no_zeros = [remove_leading_zeros(date) for date in dates]
 
@@ -110,18 +122,17 @@ def record_payment(client, spreadsheet_name, user_id, total_price):
                     try:
                         total_price = float(total_price) + float(existing_amount)
                     except ValueError:
-                        total_price = float(total_price) 
+                        total_price = float(total_price)
                 worksheet.update_cell(row_index, date_column_index, total_price)
 
             else:
                 last_filled_column = len(dates)
                 next_column_index = last_filled_column + 1
 
-                worksheet.update_cell(2, next_column_index, current_date_no_zeros) 
+                worksheet.update_cell(2, next_column_index, current_date_no_zeros)
                 worksheet.update_cell(row_index, next_column_index, total_price)
     except Exception as e:
         print(f"Ошибка при записи платежа: {e}")
-
 
 def record_training_details(client, spreadsheet_name, training_date, training_price):
     if client is None:
@@ -131,18 +142,21 @@ def record_training_details(client, spreadsheet_name, training_date, training_pr
         sheet = client.open(spreadsheet_name)
         worksheet = sheet.worksheet("В.Расход")
 
+        start_time = time.time()
+
+        # 1. Получаем данные из 4-й строки
         dates_row = worksheet.row_values(4)
 
-        next_col_index = len(dates_row) + 1 
+        end_time = time.time()
+        print(f"record_training_details: Данные получены за {end_time - start_time:.4f} секунд")
 
+        next_col_index = len(dates_row) + 1
 
         worksheet.update_cell(4, next_col_index, training_date)
-
         worksheet.update_cell(3, next_col_index, str(training_price))
 
     except Exception as e:
         print(f"Ошибка при записи данных о тренировке: {e}")
-
 
 def update_training_status(client, spreadsheet_name, user_id, training_info, status):
     if client is None:
@@ -152,20 +166,26 @@ def update_training_status(client, spreadsheet_name, user_id, training_info, sta
         sheet = client.open(spreadsheet_name)
         worksheet = sheet.worksheet("В.Расход")
 
+        start_time = time.time()
+
+        # 1. Получаем необходимые данные
         user_ids = worksheet.col_values(2)
+        header_row = worksheet.row_values(4)
+        price_row = worksheet.row_values(3)
+
+        end_time = time.time()
+        print(f"update_training_status: Данные получены за {end_time - start_time:.4f} секунд")
+
         if str(user_id) in user_ids:
             row_index = user_ids.index(str(user_id)) + 1
 
             training_date = training_info['date']
             training_price = str(training_info['price'])
-            header_row = worksheet.row_values(4)
             
             col_index = None
-
             for i in reversed(range(len(header_row))):
                 header = header_row[i]
                 if header == training_date:
-                    price_row = worksheet.row_values(3)
                     if i < len(price_row) and str(price_row[i]) == training_price:
                         col_index = i + 1
                         break
@@ -177,8 +197,6 @@ def update_training_status(client, spreadsheet_name, user_id, training_info, sta
                 worksheet.update_cell(row_index, col_index, status)
     except Exception as e:
         print(f"Ошибка при обновлении статуса тренировки в OpenAI Sheets: {e}")
-
-
 
 def get_participants_for_training(client, spreadsheet_name, training_date, training_price):
     if client is None:
@@ -197,29 +215,43 @@ def get_participants_for_training(client, spreadsheet_name, training_date, train
         sheet = client.open(spreadsheet_name)
         worksheet = sheet.worksheet("В.Расход")
         
-        all_data = worksheet.get_all_values()[4:]
-        header_row = worksheet.row_values(4)
-        
-        col_index = None
-        for i in reversed(range(len(header_row))):
-            header = header_row[i]
-            if header == training_date:
-                price_row = worksheet.row_values(3)
-                if i < len(price_row) and str(price_row[i]) == training_price:
-                    col_index = i + 1
-                    break
+        start_time = time.time()
 
-        if col_index is None:
+        # 1. Получаем все данные за один запрос
+        data = worksheet.get_all_values()
+
+        # 2. Преобразуем данные в numpy array для быстрой обработки
+        data_array = np.array(data)
+
+        header_row = data_array[3, :]  # 4-я строка (индексы начинаются с 0)
+        price_row = data_array[2, :]   # 3-я строка
+        names_col = data_array[4:, 0]   # 5-я строка и далее, 1-й столбец
+        status_col = data_array[4:, :]  # Статусы
+
+        end_time = time.time()
+        print(f"get_participants_for_training: Данные получены за {end_time - start_time:.4f} секунд")
+
+        # 3. Ищем индекс столбца с датой и ценой
+        date_col_index = -1
+        for i in reversed(range(len(header_row))):
+            if header_row[i] == training_date and str(price_row[i]) == training_price:
+                date_col_index = i
+                break
+
+        if date_col_index == -1:
+            print(f"get_participants_for_training: Не найден столбец для тренировки {training_date} - {training_price}.")
             return []
 
+        # 4. Собираем информацию об участниках
         participants = []
-        for i, row in enumerate(all_data):
-            if len(row) > col_index - 1:
-                status = row[col_index - 1]
-                name = row[0]
+        for i, name in enumerate(names_col):
+            # Чтобы избежать выхода за границы массива
+            if i < status_col.shape[0]:
+                status = status_col[i, date_col_index]
                 if status in ("*", "1", "0"):
                     participants.append({"name": name, "status": status})
-            time.sleep(0.1)
+                elif status == "#":
+                    participants.append({"name": f"{name} (Вернуть оплату)", "status": status})
 
         cache[cache_key] = {'participants': participants, 'timestamp': datetime.datetime.now()}
         return participants
@@ -227,40 +259,61 @@ def get_participants_for_training(client, spreadsheet_name, training_date, train
     except Exception as e:
         print(f"get_participants_for_training: Произошла ошибка: {e}")
         return []
-    
-def cancel_training_for_user(client, spreadsheet_name, training_date, training_price, user):
+
+def cancel_training_for_user(client, spreadsheet_name, training_date, training_price, user, new_status):
     try:
         sheet = client.open(spreadsheet_name)
         worksheet = sheet.worksheet("В.Расход")
+
+        start_time = time.time()
+
+        # 1. Получаем необходимые данные
         names_col = worksheet.col_values(1)
         header_row = worksheet.row_values(4)
+        price_row = worksheet.row_values(3)
+
+        end_time = time.time()
+        print(f"cancel_training_for_user: Данные получены за {end_time - start_time:.4f} секунд")
 
         user_name = user['name']
+
+        # Сначала проверяем, есть ли " (Вернуть оплату)" в имени
+        if " (Вернуть оплату)" in user_name:
+            user_name_to_search = user_name.replace(" (Вернуть оплату)", "").strip()
+        else:
+            user_name_to_search = user_name
+
+        print(f"cancel_training_for_user: Ищем пользователя с именем: {user_name_to_search}")
+
         row_index = None
         for i, name in enumerate(names_col):
-            if name == user_name:
+            if name == user_name_to_search:
                 row_index = i + 1
+                print(f"cancel_training_for_user: Пользователь найден в строке: {row_index}")
                 break
+
         if row_index is None:
+            print(f"cancel_training_for_user: Пользователь {user_name_to_search} не найден в списке имен.")
             return
         
         col_index = None
         for i in reversed(range(len(header_row))):
             header = header_row[i]
             if header == training_date:
-                price_row = worksheet.row_values(3)
                 if i < len(price_row) and str(price_row[i]) == training_price:
                     col_index = i + 1
                     break
 
         if col_index is None:
+            print(f"cancel_training_for_user: Не найден столбец для тренировки {training_date} - {training_price}.")
             return
         
-        cell_value = worksheet.cell(row_index, col_index).value
-        if cell_value == "1":
-            worksheet.update_cell(row_index, col_index, "0")
-        elif cell_value == "*":
-            worksheet.update_cell(row_index, col_index, "")
- 
+        # Обновляем ячейку с новым статусом
+        try: 
+            worksheet.update_cell(row_index, col_index, new_status)
+            print(f"cancel_training_for_user: Обновлена ячейка ({row_index}, {col_index}) на статус {new_status}")
+        except Exception as e:
+            print(f"cancel_training_for_user: Ошибка при обновлении ячейки: {e}")
+
     except Exception as e:
         print(f"Error during cancelling training for user in Google Sheets: {e}")
