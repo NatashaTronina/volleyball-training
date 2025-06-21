@@ -101,7 +101,7 @@ def handle_name_input(bot, message):
         full_name = message.text.strip()
         write_name_to_google_sheet(client, "Тренировки", full_name, user_id)
         users[user_id]['awaiting_name'] = False
-        bot.send_message(message.chat.id, f"Спасибо, {full_name}! Ваше имя и фамилия сохранены. \nЕсли вы неверно ввели имя и фамилию, используйте команду /start \nДля голосования используйте команду /voting")
+        bot.send_message(message.chat.id, f"Спасибо, {full_name}! Ваше имя и фамилия сохранены. \nЕсли вы неверно ввели данные, используйте команду /start \nДля голосования используйте команду /voting")
 
 def status(bot, message):
     user_id = message.from_user.id

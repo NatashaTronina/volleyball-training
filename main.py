@@ -18,7 +18,7 @@ admin.poll_data = load_polls()
 admin.set_commands(bot)
 
 def handle_start_command(message):
-    if is_admin(message):
+    if is_admin(message.from_user):
         admin.admin_start_command(bot, message)
     else:
         users.users_start_command(bot, message)
@@ -40,14 +40,15 @@ def handle_user_other_commands(message):
 
 @bot.message_handler(commands=['create_poll', 'check_payments', 'check_list'])
 def handle_admin_commands(message):
-    if not is_admin(message):
+    if not is_admin(message.from_user):
+        bot.send_message(message.chat.id, "У вас нет прав для выполнения этой операции.")
         return
     if message.text == '/create_poll':
         admin.create_poll_command(bot, message)
     elif message.text == '/check_payments':
         admin.check_payments(bot, message)
-    elif message.text == '/check_list': 
-        admin.check_list_command(bot, message)
+    elif message.text == '/check_list':
+        admin.check_list_command(bot, message.chat.id)
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
@@ -66,8 +67,9 @@ def handle_poll_answer(poll_answer):
 def handle_all_text_messages(message):
     if message.text.startswith('/'):
         return
+    if is_admin(message.from_user):
+        return
     users.handle_name_input(bot, message)
-
 
 if __name__ == '__main__':
     print("Бот запущен")

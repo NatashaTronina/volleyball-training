@@ -8,7 +8,7 @@ from DATE import get_day_of_week
 from shared_data import awaiting_confirmation, confirmed_payments, save_polls, load_polls
 import threading
 import schedule
-from ggl import record_payment, authenticate_google_sheets, record_training_details, update_training_status, get_participants_for_training, cancel_training_for_user, cache
+from ggl import record_payment, authenticate_google_sheets, record_training_details, update_training_status, get_participants_for_training, cancel_training_for_user, cache, delete_training_details
 from users import get_user_ids, user_confirmed, users, load_latest_poll
 
 ADMIN_ID = [494635818]
@@ -16,13 +16,14 @@ poll_data = {}
 poll_results = {}
 latest_poll = {}
 payment_details = {}
+message_ids = {}
 
 client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json')
 
 POLL_DATA_FILE = "polls.json"
 
-def is_admin(message):
-    return message.from_user.id in ADMIN_ID
+def is_admin(from_user):
+    return from_user.id in ADMIN_ID
 
 def load_latest_poll():
     loaded_polls = load_polls()  
@@ -90,7 +91,7 @@ def admin_start_command(bot, message):
         bot.send_message(chat_id, f"Привет, {first_name}! Для создания тренировок нажми команду /create_poll")
 
 def create_poll_command(bot, message):
-    if is_admin(message):
+    if is_admin(message.from_user): # Используем message.from_user
         chat_id = message.chat.id
         poll_id = str(uuid.uuid4())
         latest_poll["id"] = poll_id
@@ -224,7 +225,7 @@ def get_comment(message, poll_id, bot):
 
 def next_action(message, poll_id, bot):
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить еще вариант"), types.KeyboardButton("Отменить создание"))
+    keyboard.add(types.KeyboardButton("Создать опрос"), types.KeyboardButton("Добавить ещё вариант"), types.KeyboardButton("Отменить создание"))
 
     bot.send_message(message.chat.id, "Что дальше?", reply_markup=keyboard)
     bot.register_next_step_handler(message, handle_next_action_choice, poll_id, bot)
@@ -235,16 +236,23 @@ def handle_next_action_choice(message, poll_id, bot):
     if action == "Создать опрос":
         bot.send_message(chat_id, "Пожалуйста, отправьте ссылку на оплату СБП:")
         bot.register_next_step_handler(message, save_sbp_link_to_all, poll_id, bot)
-    elif action == "Добавить еще вариант":
+    elif action == "Добавить ещё вариант":
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(message, get_date, poll_id, bot)
     elif action == "Отменить создание":
         if poll_id in poll_data:
+            for training in poll_data[poll_id]:
+                training_date = training.get('date')
+                training_price = training.get('price')
+                if training_date and training_price:
+                    delete_training_details(client, "Тренировки", training_date, training_price)
+
             del poll_data[poll_id]
             save_polls(poll_data)
             user_confirmed.clear()
-        bot.send_message(chat_id, "Создание опроса отменено.")
-        return 
+
+        bot.send_message(chat_id, "Создание опроса отменено, данные о тренировках удалены из таблицы.")
+        return
     else:
         bot.send_message(message.chat.id, "Неверный выбор. Пожалуйста, выберите из предложенных")
 
@@ -369,7 +377,7 @@ def get_latest_poll():
     return None
 
 def check_payments(bot, message):
-    if is_admin(message):
+    if is_admin(message.from_user):  # Используем message.from_user
         if awaiting_confirmation:
             text = "Список ожидающих подтверждения оплат:\n"
 
@@ -425,33 +433,31 @@ def handle_poll_confirmation(bot, call):
         bot.send_message(chat_id, "Введите дату тренировки в формате ДД.ММ (например, 01.01):")
         bot.register_next_step_handler(call.message, get_date, poll_id, bot)
 
-def check_list_command(bot, message):
-    if is_admin(message):
-        chat_id = message.chat.id
+def check_list_command(bot, chat_id):
+    latest_poll = load_latest_poll()
+    if not latest_poll:
+        sent_message = bot.send_message(chat_id, "Нет активных опросов.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
+        return
 
-        latest_poll = load_latest_poll()
-        if not latest_poll:
-            bot.send_message(chat_id, "Нет активных опросов.")
-            return
+    poll_id, training_options = list(latest_poll.items())[0]
+    if not isinstance(training_options, list):
+        sent_message = bot.send_message(chat_id, "Неверный формат данных опроса.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
+        return
 
-        poll_id, training_options = list(latest_poll.items())[0]
-        if not isinstance(training_options, list):
-            bot.send_message(chat_id, "Неверный формат данных опроса.")
-            return
+    keyboard = types.InlineKeyboardMarkup()
+    for i, training in enumerate(training_options):
+        date = training.get('date', 'Не указана')
+        time = training.get('time', 'Не указана')
+        price = training.get('price', 'Не указана')
+        button_text = f"{date} {time} {price} руб."
+        callback_data = f"training_selected_{poll_id}_{i}"
+        button = types.InlineKeyboardButton(text=button_text, callback_data=callback_data)
+        keyboard.add(button)
 
-        keyboard = types.InlineKeyboardMarkup()
-        for i, training in enumerate(training_options):
-            date = training.get('date', 'Не указана')
-            time = training.get('time', 'Не указана')
-            price = training.get('price', 'Не указана')
-            button_text = f"{date} {time} {price} руб."
-            callback_data = f"training_selected_{poll_id}_{i}"  
-            button = types.InlineKeyboardButton(text=button_text, callback_data=callback_data)
-            keyboard.add(button)
-
-        bot.send_message(chat_id, "Выберите тренировку для просмотра списка участников:", reply_markup=keyboard)
-    else:
-        bot.send_message(message.chat.id, "У вас нет прав для выполнения этой команды.")
+    sent_message = bot.send_message(chat_id, "Выберите тренировку для просмотра списка участников:", reply_markup=keyboard)
+    message_ids.setdefault(chat_id, []).append(sent_message.message_id)
 
 def save_sbp_link_to_all(message, poll_id, bot):
     sbp_link = message.text.strip()
@@ -660,15 +666,18 @@ def remove_user_from_training(bot, chat_id, poll_id, training_index, user_index)
 def show_participants_list(bot, chat_id, poll_id, training_index):
     latest_poll = load_latest_poll()
     if not latest_poll:
-        bot.send_message(chat_id, "Опрос не найден.")
+        sent_message = bot.send_message(chat_id, "Опрос не найден.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
         return
     if poll_id not in latest_poll:
-        bot.send_message(chat_id, f"Опрос с ID {poll_id} не найден.")
+        sent_message = bot.send_message(chat_id, f"Опрос с ID {poll_id} не найден.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
         return
 
     training_options = latest_poll[poll_id]
     if not isinstance(training_options, list) or training_index >= len(training_options):
-        bot.send_message(chat_id, "Тренировка не найдена.")
+        sent_message = bot.send_message(chat_id, "Тренировка не найдена.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
         return
 
     training = training_options[training_index]
@@ -678,7 +687,8 @@ def show_participants_list(bot, chat_id, poll_id, training_index):
     participants = get_participants_for_training(client, "Тренировки", training_date, training_price)
 
     if not participants:
-        bot.send_message(chat_id, "На эту тренировку никто не записался.")
+        sent_message = bot.send_message(chat_id, "На эту тренировку никто не записался.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
         return
 
     try:
@@ -690,19 +700,22 @@ def show_participants_list(bot, chat_id, poll_id, training_index):
         keyboard.add(edit_button)
 
         if chat_id is not None:
-            bot.send_message(chat_id, message_text, reply_markup=keyboard)
+            sent_message = bot.send_message(chat_id, message_text, reply_markup=keyboard)
+            message_ids.setdefault(chat_id, []).append(sent_message.message_id)
     except Exception as e:
         print(f"Произошла ошибка: {e}")
 
 def show_edit_list_options(bot, chat_id, poll_id, training_index):
     latest_poll = load_latest_poll()
     if not latest_poll or poll_id not in latest_poll:
-        bot.send_message(chat_id, "Опрос не найден.")
+        sent_message = bot.send_message(chat_id, "Опрос не найден.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
         return
 
     training_options = latest_poll[poll_id]
     if not isinstance(training_options, list) or training_index >= len(training_options):
-        bot.send_message(chat_id, "Тренировка не найдена.")
+        sent_message = bot.send_message(chat_id, "Тренировка не найдена.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
         return
 
     training = training_options[training_index]
@@ -712,10 +725,11 @@ def show_edit_list_options(bot, chat_id, poll_id, training_index):
     participants = get_participants_for_training(client, "Тренировки", training_date, training_price)
 
     if not participants:
-        bot.send_message(chat_id, "На эту тренировку никто не записался.")
+        sent_message = bot.send_message(chat_id, "На эту тренировку никто не записался.")
+        message_ids.setdefault(chat_id, []).append(sent_message.message_id)
         return
-    
-    keyboard = types.InlineKeyboardMarkup(row_width=1) 
+
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
 
     for i, participant in enumerate(participants):
         user_name = participant['name'].replace(" (Вернуть оплату)", "")
@@ -723,19 +737,37 @@ def show_edit_list_options(bot, chat_id, poll_id, training_index):
         button = types.InlineKeyboardButton(text=f"Удалить {user_name}", callback_data=callback_data)
         keyboard.add(button)
 
-    bot.send_message(chat_id, "Выберите участника для удаления:", reply_markup=keyboard)
+    sent_message = bot.send_message(chat_id, "Выберите участника для удаления:", reply_markup=keyboard)
+    message_ids.setdefault(chat_id, []).append(sent_message.message_id)
 
-def admin_handle_callback_query(bot, call): 
+
+def admin_handle_callback_query(bot, call):
+    from_user = call.from_user
+    chat_id = call.message.chat.id
+    if not is_admin(from_user):
+        bot.send_message(chat_id, "У вас нет прав для выполнения этой операции.")
+        return 
+
     if call.data.startswith('training_selected_'):
-        poll_id, training_index = call.data[18:].split('_') 
-        show_participants_list(bot, call.message.chat.id, poll_id, int(training_index))
-    elif call.data.startswith('edit_list_'): 
-        poll_id, training_index = call.data[10:].split('_')  
-        show_edit_list_options(bot, call.message.chat.id, poll_id, int(training_index))
+        poll_id, training_index = call.data[18:].split('_')
+        show_participants_list(bot, chat_id, poll_id, int(training_index))
+    elif call.data.startswith('edit_list_'):
+        poll_id, training_index = call.data[10:].split('_')
+        show_edit_list_options(bot, chat_id, poll_id, int(training_index))
     elif call.data.startswith('remove_user_'):
-        poll_id, training_index, user_index = call.data[12:].split('_') 
-        remove_user_from_training(bot, call.message.chat.id, poll_id, int(training_index), int(user_index))
-        show_edit_list_options(bot, call.message.chat.id, poll_id, int(training_index))
+        poll_id, training_index, user_index = call.data[12:].split('_')
+        remove_user_from_training(bot, chat_id, poll_id, int(training_index), int(user_index))
+
+        if chat_id in message_ids:
+            for message_id in message_ids[chat_id]:
+                try:
+                    bot.delete_message(chat_id, message_id)
+                except Exception as e:
+                    print(f"Ошибка при удалении сообщения: {e}")
+            del message_ids[chat_id] 
+
+        check_list_command(bot, chat_id)
+        return
     elif call.data.startswith('poll_confirm') or call.data.startswith('poll_edit') or call.data.startswith(
             "cancel_creation_"):
         handle_poll_confirmation(bot, call)
