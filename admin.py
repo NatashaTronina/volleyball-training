@@ -23,7 +23,9 @@ client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json')
 POLL_DATA_FILE = "polls.json"
 
 def is_admin(from_user):
-    return from_user.id in ADMIN_ID
+    result = from_user.id in ADMIN_ID
+    return result
+
 
 def load_latest_poll():
     loaded_polls = load_polls()  
@@ -84,14 +86,13 @@ def set_commands(bot):
         bot.set_my_commands(commands=admin_commands, scope=admin_scope)
 
 def admin_start_command(bot, message):
-    if is_admin(message):
+    if is_admin(message.from_user):  
         first_name = message.from_user.first_name
         chat_id = message.chat.id
-
         bot.send_message(chat_id, f"Привет, {first_name}! Для создания тренировок нажми команду /create_poll")
 
 def create_poll_command(bot, message):
-    if is_admin(message.from_user): # Используем message.from_user
+    if is_admin(message.from_user): 
         chat_id = message.chat.id
         poll_id = str(uuid.uuid4())
         latest_poll["id"] = poll_id
@@ -377,7 +378,7 @@ def get_latest_poll():
     return None
 
 def check_payments(bot, message):
-    if is_admin(message.from_user):  # Используем message.from_user
+    if is_admin(message.from_user): 
         if awaiting_confirmation:
             text = "Список ожидающих подтверждения оплат:\n"
 
@@ -826,4 +827,3 @@ def start_poll_scheduler(bot):
             time.sleep(60)
 
     threading.Thread(target=run_scheduler, daemon=True).start()
-

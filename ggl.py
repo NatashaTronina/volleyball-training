@@ -226,7 +226,9 @@ def update_training_status(client, spreadsheet_name, user_id, training_info, sta
                 return
 
             if col_index:
-                worksheet.update_cell(row_index, col_index, status)
+                current_value = worksheet.cell(row_index, col_index).value
+                if current_value != "#": 
+                    worksheet.update_cell(row_index, col_index, status)
     except Exception as e:
         print(f"Ошибка при обновлении статуса тренировки в OpenAI Sheets: {e}")
 
@@ -264,7 +266,6 @@ def get_participants_for_training(client, spreadsheet_name, training_date, train
                 break
 
         if date_col_index == -1:
-            print(f"get_participants_for_training: Не найден столбец для тренировки {training_date} - {training_price}.")
             return []
 
         participants = []

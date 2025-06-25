@@ -25,7 +25,11 @@ def handle_start_command(message):
 
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-    handle_start_command(message)
+    if is_admin(message.from_user):
+        admin.admin_start_command(bot, message)
+    else:
+        users.users_start_command(bot, message)
+
 
 @bot.message_handler(commands=['help', 'status', 'voting'])
 def handle_user_other_commands(message):
@@ -66,10 +70,12 @@ def handle_poll_answer(poll_answer):
 @bot.message_handler(func=lambda message: True)  
 def handle_all_text_messages(message):
     if message.text.startswith('/'):
-        return
+        return 
     if is_admin(message.from_user):
         return
     users.handle_name_input(bot, message)
+
+
 
 if __name__ == '__main__':
     print("Бот запущен")
