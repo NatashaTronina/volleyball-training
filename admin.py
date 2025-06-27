@@ -129,15 +129,27 @@ def get_date(message, poll_id, bot):
 def get_time(message, poll_id, bot):
     time_input = message.text
     chat_id = message.chat.id
-    if re.match(r"^\d{2}[:-]\d{2}$", time_input):
-        if poll_id in poll_data and poll_data[poll_id]:
-            poll_data[poll_id][-1]['time'] = time_input
-            save_polls(poll_data)
 
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
-        bot.send_message(message.chat.id, "Выберите тип тренировки:", reply_markup=keyboard)
-        bot.register_next_step_handler(message, get_training_type, poll_id, bot)
+    if re.match(r"^\d{2}[:-]\d{2}$", time_input):
+        try:
+            hours, minutes = map(int, time_input.split('-'))
+
+            if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                if poll_id in poll_data and poll_data[poll_id]:
+                    poll_data[poll_id][-1]['time'] = time_input
+                    save_polls(poll_data)
+
+                keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+                keyboard.add(types.KeyboardButton("Игровая"), types.KeyboardButton("Техническая"))
+                bot.send_message(message.chat.id, "Выберите тип тренировки:", reply_markup=keyboard)
+                bot.register_next_step_handler(message, get_training_type, poll_id, bot)
+            else:
+                bot.send_message(chat_id, "Неверный формат времени. Пожалуйста, введите корректное время в формате ЧЧ-ММ (например, 12-00):")
+                bot.register_next_step_handler(message, get_time, poll_id, bot)
+
+        except ValueError:
+            bot.send_message(chat_id, "Неверный формат времени. Пожалуйста, введите время в формате ЧЧ-ММ (например, 12-00):")
+            bot.register_next_step_handler(message, get_time, poll_id, bot)
     else:
         bot.send_message(chat_id, "Неверный формат времени. Пожалуйста, введите время в формате ЧЧ-ММ (например, 12-00):")
         bot.register_next_step_handler(message, get_time, poll_id, bot)
