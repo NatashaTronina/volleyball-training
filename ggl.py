@@ -23,9 +23,9 @@ def authenticate_google_sheets(json_file, max_retries=3, retry_delay=2):
         except Exception as e:
             print(f"authenticate_google_sheets: Ошибка аутентификации (попытка {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
-                time.sleep(retry_delay) # Пауза перед следующей попыткой
+                time.sleep(retry_delay)
     print("authenticate_google_sheets: Не удалось подключиться после нескольких попыток.")
-    return None # Вернуть None, если подключение не удалось
+    return None
 
 def normalize_name(full_name):
     normalized = full_name.strip()
@@ -160,7 +160,7 @@ def record_payment(client, spreadsheet_name, user_id, total_price, max_retries=3
                 next_column_index = last_filled_column + 1
                 worksheet.update_cell(2, next_column_index, current_date_no_zeros)
                 worksheet.update_cell(row_index, next_column_index, total_price)
-            break  # Выход из цикла, если операция успешна
+            break 
 
         except Exception as e:
             print(f"record_payment: Ошибка при записи платежа (попытка {attempt + 1}/{max_retries}): {e}")
@@ -194,7 +194,7 @@ def record_training_details(client, spreadsheet_name, training_date, training_pr
 
             worksheet.update_cell(4, next_col_index, training_date)
             worksheet.update_cell(3, next_col_index, str(training_price))
-            break  # Выход из цикла, если операция успешна
+            break  
 
         except Exception as e:
             print(f"record_training_details: Ошибка при записи данных о тренировке (попытка {attempt + 1}/{max_retries}): {e}")
@@ -224,7 +224,7 @@ def delete_training_details(client, spreadsheet_name, training_date, training_pr
             col_index = None
             for i in reversed(range(len(header_row))):
                 header = header_row[i]
-                price = price_row[i] if i < len(price_row) else ""  # Проверка на выход за границы
+                price = price_row[i] if i < len(price_row) else ""  
 
                 if header == training_date and str(price) == str(training_price):
                     col_index = i + 1
@@ -237,7 +237,7 @@ def delete_training_details(client, spreadsheet_name, training_date, training_pr
             for cell in cell_list:
                 cell.value = ""
             worksheet.update_cells(cell_list)
-            break  # Выход из цикла, если операция успешна
+            break  
 
         except Exception as e:
             print(f"delete_training_details: Ошибка при удалении данных о тренировке (попытка {attempt + 1}/{max_retries}): {e}")
@@ -291,7 +291,7 @@ def update_training_status(client, spreadsheet_name, user_id, training_info, sta
                     current_value = worksheet.cell(row_index, col_index).value
                     if current_value != "#":
                         worksheet.update_cell(row_index, col_index, status)
-            break  # Выход из цикла, если операция успешна
+            break  
 
         except Exception as e:
             print(f"update_training_status: Ошибка при обновлении статуса тренировки (попытка {attempt + 1}/{max_retries}): {e}")
@@ -354,7 +354,7 @@ def get_participants_for_training(client, spreadsheet_name, training_date, train
 
             cache[cache_key] = {'participants': participants, 'timestamp': datetime.datetime.now()}
             return participants
-            break  # Выход из цикла, если операция успешна
+            break  
 
         except Exception as e:
             print(f"get_participants_for_training: Ошибка при получении участников тренировки (попытка {attempt + 1}/{max_retries}): {e}")
@@ -417,7 +417,7 @@ def cancel_training_for_user(client, spreadsheet_name, training_date, training_p
 
             try:
                 worksheet.update_cell(row_index, col_index, new_status)
-                break  # Выход из цикла, если операция успешна
+                break  
             except Exception as e:
                 print(f"cancel_training_for_user: Ошибка при обновлении ячейки (попытка {attempt + 1}/{max_retries}): {e}")
                 break

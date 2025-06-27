@@ -1,6 +1,11 @@
 # ШАГ 1: Взять за основу готовый образ с Python 3.10
 FROM python:3.13-slim
 
+# Установите временную зону
+RUN apt-get update && apt-get install -y tzdata
+ENV TZ=Asia/Yekaterinburg 
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # ШАГ 2: Установить рабочую директорию внутри контейнера
 WORKDIR /app
 
