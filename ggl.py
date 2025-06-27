@@ -8,16 +8,24 @@ import numpy as np
 
 cache = defaultdict(dict)
 
-def authenticate_google_sheets(json_file):
-    """Аутентификация и получение клиента для работы с Google Sheets."""
+def authenticate_google_sheets(json_file, max_retries=3, retry_delay=2):
+    """Аутентификация и получение клиента для работы с Google Sheets с повторными попытками."""
     scopes = [
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive'
     ]
-    creds = Credentials.from_service_account_file(json_file, scopes=scopes)
-    client = gspread.authorize(creds)
-    return client
+    for attempt in range(max_retries):
+        try:
+            creds = Credentials.from_service_account_file(json_file, scopes=scopes)
+            client = gspread.authorize(creds)
+            return client
+        except Exception as e:
+            print(f"authenticate_google_sheets: Ошибка аутентификации (попытка {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay) # Пауза перед следующей попыткой
+    print("authenticate_google_sheets: Не удалось подключиться после нескольких попыток.")
+    return None # Вернуть None, если подключение не удалось
 
 def normalize_name(full_name):
     normalized = full_name.strip()
@@ -27,56 +35,73 @@ def normalize_name(full_name):
         parts.append(bracket.strip())
     return normalized, parts
 
-def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id):
+def write_name_to_google_sheet(client, spreadsheet_name, full_name, user_id, max_retries=3, retry_delay=2):
     if client is None:
+        print("write_name_to_google_sheet: Не удалось подключиться к Google Sheets.")
         return
 
-    sheet = client.open(spreadsheet_name)
+    normalized_name, name_parts = normalize_name(full_name)
     sheets_to_check = ["В.Расход", "В.Приход"]
 
-    normalized_name, name_parts = normalize_name(full_name)
-
     for sheet_name in sheets_to_check:
-        worksheet = sheet.worksheet(sheet_name)
+        for attempt in range(max_retries):
+            try:
+                worksheet = client.open(spreadsheet_name).worksheet(sheet_name)
+                start_time = time.time()
+                column_data = worksheet.col_values(1)
+                end_time = time.time()
+                print(f"write_name_to_google_sheet: Данные получены за {end_time - start_time:.4f} секунд (попытка {attempt + 1}/{max_retries})")
 
-        start_time = time.time()
+                name_found = False
+                input_name_parts = normalized_name.split()
+                input_first_name = input_name_parts[0]
 
-        # 1. Получаем все значения из первого столбца
-        column_data = worksheet.col_values(1)
-
-        end_time = time.time()
-        print(f"write_name_to_google_sheet: Данные получены за {end_time - start_time:.4f} секунд")
-
-        name_found = False
-        input_name_parts = normalized_name.split()
-        input_first_name = input_name_parts[0]
-
-        for i, table_name in enumerate(column_data):
-            table_name_without_brackets = re.sub(r'\s*\(.*?\)\s*', '', table_name).strip()
-            table_name_parts = table_name_without_brackets.split()
-
-            if len(table_name_parts) >= 1:
-                table_first_name = table_name_parts[0]
-
-                if input_first_name in table_first_name:
-                    row_index = i + 1
-                    worksheet.update_cell(row_index, 2, str(user_id))
-                    name_found = True
-                    break
-
-        if not name_found:
-            for part in name_parts:
                 for i, table_name in enumerate(column_data):
-                     if part in table_name:
-                        row_index = i + 1
-                        worksheet.update_cell(row_index, 2, str(user_id))
-                        name_found = True
-                        break
+                    table_name_without_brackets = re.sub(r'\s*\(.*?\)\s*', '', table_name).strip()
+                    table_name_parts = table_name_without_brackets.split()
+
+                    if len(table_name_parts) >= 1:
+                        table_first_name = table_name_parts[0]
+
+                        if input_first_name in table_first_name:
+                            row_index = i + 1
+                            worksheet.update_cell(row_index, 2, str(user_id))
+                            name_found = True
+                            break
+
+                if not name_found:
+                    for part in name_parts:
+                        for i, table_name in enumerate(column_data):
+                             if part in table_name:
+                                row_index = i + 1
+                                worksheet.update_cell(row_index, 2, str(user_id))
+                                name_found = True
+                                break
+                        if name_found:
+                            break
                 if name_found:
                     break
+                else:
+                    print(f"write_name_to_google_sheet: Имя не найдено в {sheet_name} (попытка {attempt + 1}/{max_retries})")
 
-def record_payment(client, spreadsheet_name, user_id, total_price):
+            except Exception as e:
+                print(f"write_name_to_google_sheet: Ошибка при записи в {sheet_name} (попытка {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)  
+                    client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json', max_retries, retry_delay)
+                    if client is None:
+                       print("write_name_to_google_sheet: Не удалось восстановить подключение.")
+                       return
+                else:
+                    print("write_name_to_google_sheet: Не удалось записать после нескольких попыток.")
+                    return
+
+        if name_found:
+           break
+
+def record_payment(client, spreadsheet_name, user_id, total_price, max_retries=3, retry_delay=2):
     if client is None:
+        print("record_payment: Не удалось подключиться к Google Sheets.")
         return
 
     def remove_leading_zeros(date_string):
@@ -88,132 +113,297 @@ def record_payment(client, spreadsheet_name, user_id, total_price):
             return f"{day}.{month}.{year}"
         return date_string
 
-    try:
-        sheet = client.open(spreadsheet_name)
-        worksheet = sheet.worksheet("В.Приход")
+    for attempt in range(max_retries):
+        try:
+            sheet = client.open(spreadsheet_name)
+            worksheet = sheet.worksheet("В.Приход")
 
-        start_time = time.time()
+            start_time = time.time()
+            dates = worksheet.row_values(2)
+            user_ids = worksheet.col_values(2)
 
-        # 1. Получаем данные из столбцов 2 и 3
-        dates = worksheet.row_values(2)
-        user_ids = worksheet.col_values(2)
+            end_time = time.time()
+            print(f"record_payment: Данные получены за {end_time - start_time:.4f} секунд (попытка {attempt + 1}/{max_retries})")
 
-        end_time = time.time()
-        print(f"record_payment: Данные получены за {end_time - start_time:.4f} секунд")
+            current_date = datetime.datetime.now().strftime("%d.%m.%y")
+            current_date_no_zeros = remove_leading_zeros(current_date)
 
-        current_date = datetime.datetime.now().strftime("%d.%m.%y")
-        current_date_no_zeros = remove_leading_zeros(current_date)
+            if str(user_id) in user_ids:
+                row_index = user_ids.index(str(user_id)) + 1
 
-        if str(user_id) in user_ids:
-            row_index = user_ids.index(str(user_id)) + 1
+                dates_no_zeros = [remove_leading_zeros(date) for date in dates]
 
-            dates_no_zeros = [remove_leading_zeros(date) for date in dates]
+                date_column_index = None
+                for i, date in enumerate(dates_no_zeros):
+                    if date == current_date_no_zeros:
+                        date_column_index = i + 1
+                        break
 
-            date_column_index = None
-            for i, date in enumerate(dates_no_zeros):
-                if date == current_date_no_zeros:
-                    date_column_index = i + 1
-                    break
+                if date_column_index:
+                    existing_amount_cell = worksheet.cell(row_index, date_column_index)
+                    existing_amount = existing_amount_cell.value
+                    if existing_amount:
+                        try:
+                            total_price = float(total_price) + float(existing_amount)
+                        except ValueError:
+                            total_price = float(total_price)
+                    worksheet.update_cell(row_index, date_column_index, total_price)
 
-            if date_column_index:
-                existing_amount_cell = worksheet.cell(row_index, date_column_index)
-                existing_amount = existing_amount_cell.value
-                if existing_amount:
-                    try:
-                        total_price = float(total_price) + float(existing_amount)
-                    except ValueError:
-                        total_price = float(total_price)
-                worksheet.update_cell(row_index, date_column_index, total_price)
+                else:
+                    last_filled_column = len(dates)
+                    next_column_index = last_filled_column + 1
+                    worksheet.update_cell(2, next_column_index, current_date_no_zeros)
+                    worksheet.update_cell(row_index, next_column_index, total_price)
 
             else:
                 last_filled_column = len(dates)
                 next_column_index = last_filled_column + 1
-
                 worksheet.update_cell(2, next_column_index, current_date_no_zeros)
                 worksheet.update_cell(row_index, next_column_index, total_price)
-    except Exception as e:
-        print(f"Ошибка при записи платежа: {e}")
+            break  # Выход из цикла, если операция успешна
 
-def record_training_details(client, spreadsheet_name, training_date, training_price):
+        except Exception as e:
+            print(f"record_payment: Ошибка при записи платежа (попытка {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json', max_retries, retry_delay)
+                if client is None:
+                   print("record_payment: Не удалось восстановить подключение.")
+                   return
+            else:
+                print("record_payment: Не удалось записать платеж после нескольких попыток.")
+                return
+
+def record_training_details(client, spreadsheet_name, training_date, training_price, max_retries=3, retry_delay=2):
     if client is None:
+        print("record_training_details: Не удалось подключиться к Google Sheets.")
         return
 
-    try:
-        sheet = client.open(spreadsheet_name)
-        worksheet = sheet.worksheet("В.Расход")
+    for attempt in range(max_retries):
+        try:
+            sheet = client.open(spreadsheet_name)
+            worksheet = sheet.worksheet("В.Расход")
 
-        start_time = time.time()
+            start_time = time.time()
+            dates_row = worksheet.row_values(4)
 
-        # 1. Получаем данные из 4-й строки
-        dates_row = worksheet.row_values(4)
+            end_time = time.time()
+            print(f"record_training_details: Данные получены за {end_time - start_time:.4f} секунд (попытка {attempt + 1}/{max_retries})")
 
-        end_time = time.time()
-        print(f"record_training_details: Данные получены за {end_time - start_time:.4f} секунд")
+            next_col_index = len(dates_row) + 1
 
-        next_col_index = len(dates_row) + 1
+            worksheet.update_cell(4, next_col_index, training_date)
+            worksheet.update_cell(3, next_col_index, str(training_price))
+            break  # Выход из цикла, если операция успешна
 
-        worksheet.update_cell(4, next_col_index, training_date)
-        worksheet.update_cell(3, next_col_index, str(training_price))
+        except Exception as e:
+            print(f"record_training_details: Ошибка при записи данных о тренировке (попытка {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json', max_retries, retry_delay)
+                if client is None:
+                    print("record_training_details: Не удалось восстановить подключение.")
+                    return
+            else:
+                print("record_training_details: Не удалось записать данные о тренировке после нескольких попыток.")
+                return
 
-    except Exception as e:
-        print(f"Ошибка при записи данных о тренировке: {e}")
-
-
-def delete_training_details(client, spreadsheet_name, training_date, training_price):
+def delete_training_details(client, spreadsheet_name, training_date, training_price, max_retries=3, retry_delay=2):
     if client is None:
+        print("delete_training_details: Не удалось подключиться к Google Sheets.")
         return
 
-    try:
-        sheet = client.open(spreadsheet_name)
-        worksheet = sheet.worksheet("В.Расход")
+    for attempt in range(max_retries):
+        try:
+            sheet = client.open(spreadsheet_name)
+            worksheet = sheet.worksheet("В.Расход")
 
-        header_row = worksheet.row_values(4)
-        price_row = worksheet.row_values(3)
+            header_row = worksheet.row_values(4)
+            price_row = worksheet.row_values(3)
 
-        col_index = None
-        for i in reversed(range(len(header_row))):
-            header = header_row[i]
-            price = price_row[i] if i < len(price_row) else ""  # Проверка на выход за границы
+            col_index = None
+            for i in reversed(range(len(header_row))):
+                header = header_row[i]
+                price = price_row[i] if i < len(price_row) else ""  # Проверка на выход за границы
 
+                if header == training_date and str(price) == str(training_price):
+                    col_index = i + 1
+                    break
 
-            if header == training_date and str(price) == str(training_price):
-                col_index = i + 1
-                break
+            if col_index is None:
+                return
 
-        if col_index is None:
-            return
+            cell_list = worksheet.range(1, col_index, worksheet.row_count, col_index)
+            for cell in cell_list:
+                cell.value = ""
+            worksheet.update_cells(cell_list)
+            break  # Выход из цикла, если операция успешна
 
-        cell_list = worksheet.range(1, col_index, worksheet.row_count, col_index)
-        for cell in cell_list:
-            cell.value = ""
-        worksheet.update_cells(cell_list)
+        except Exception as e:
+            print(f"delete_training_details: Ошибка при удалении данных о тренировке (попытка {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json', max_retries, retry_delay)
+                if client is None:
+                    print("delete_training_details: Не удалось восстановить подключение.")
+                    return
+            else:
+                print("delete_training_details: Не удалось удалить данные о тренировке после нескольких попыток.")
+                return
 
-    except Exception as e:
-        print(f"Ошибка при удалении данных о тренировке: {e}")
-
-def update_training_status(client, spreadsheet_name, user_id, training_info, status):
+def update_training_status(client, spreadsheet_name, user_id, training_info, status, max_retries=3, retry_delay=2):
     if client is None:
+        print("update_training_status: Не удалось подключиться к Google Sheets.")
         return
 
-    try:
-        sheet = client.open(spreadsheet_name)
-        worksheet = sheet.worksheet("В.Расход")
+    for attempt in range(max_retries):
+        try:
+            sheet = client.open(spreadsheet_name)
+            worksheet = sheet.worksheet("В.Расход")
 
-        start_time = time.time()
+            start_time = time.time()
 
-        user_ids = worksheet.col_values(2)
-        header_row = worksheet.row_values(4)
-        price_row = worksheet.row_values(3)
+            user_ids = worksheet.col_values(2)
+            header_row = worksheet.row_values(4)
+            price_row = worksheet.row_values(3)
 
-        end_time = time.time()
-        print(f"update_training_status: Данные получены за {end_time - start_time:.4f} секунд")
+            end_time = time.time()
+            print(f"update_training_status: Данные получены за {end_time - start_time:.4f} секунд (попытка {attempt + 1}/{max_retries})")
 
-        if str(user_id) in user_ids:
-            row_index = user_ids.index(str(user_id)) + 1
+            if str(user_id) in user_ids:
+                row_index = user_ids.index(str(user_id)) + 1
 
-            training_date = training_info['date']
-            training_price = str(training_info['price'])
-            
+                training_date = training_info['date']
+                training_price = str(training_info['price'])
+
+                col_index = None
+                for i in reversed(range(len(header_row))):
+                    header = header_row[i]
+                    if header == training_date:
+                        if i < len(price_row) and str(price_row[i]) == training_price:
+                            col_index = i + 1
+                            break
+
+                if col_index is None:
+                    return
+
+                if col_index:
+                    current_value = worksheet.cell(row_index, col_index).value
+                    if current_value != "#":
+                        worksheet.update_cell(row_index, col_index, status)
+            break  # Выход из цикла, если операция успешна
+
+        except Exception as e:
+            print(f"update_training_status: Ошибка при обновлении статуса тренировки (попытка {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json', max_retries, retry_delay)
+                if client is None:
+                    print("update_training_status: Не удалось восстановить подключение.")
+                    return
+            else:
+                print("update_training_status: Не удалось обновить статус тренировки после нескольких попыток.")
+                return
+
+def get_participants_for_training(client, spreadsheet_name, training_date, training_price, max_retries=3, retry_delay=2):
+    if client is None:
+        print("get_participants_for_training: Не удалось подключиться к Google Sheets.")
+        return []
+
+    cache_key = f"{training_date}_{training_price}"
+
+    cached_data = cache.get(cache_key)
+    if cached_data and 'timestamp' in cached_data and \
+            datetime.datetime.now() - cached_data['timestamp'] < datetime.timedelta(minutes=1):
+        return cached_data['participants']
+
+    for attempt in range(max_retries):
+        try:
+            sheet = client.open(spreadsheet_name)
+            worksheet = sheet.worksheet("В.Расход")
+
+            start_time = time.time()
+            data = worksheet.get_all_values()
+            data_array = np.array(data)
+
+            header_row = data_array[3, :]
+            price_row = data_array[2, :]
+            names_col = data_array[4:, 0]
+            status_col = data_array[4:, :]
+
+            end_time = time.time()
+            print(f"get_participants_for_training: Данные получены за {end_time - start_time:.4f} секунд (попытка {attempt + 1}/{max_retries})")
+
+            date_col_index = -1
+            for i in reversed(range(len(header_row))):
+                if header_row[i] == training_date and str(price_row[i]) == training_price:
+                    date_col_index = i
+                    break
+
+            if date_col_index == -1:
+                return []
+
+            participants = []
+            for i, name in enumerate(names_col):
+                if i < status_col.shape[0]:
+                    status = status_col[i, date_col_index]
+                    if status in ("*", "1", "0"):
+                        participants.append({"name": name, "status": status})
+                    elif status == "#":
+                        participants.append({"name": f"{name} (Вернуть оплату)", "status": status})
+
+            cache[cache_key] = {'participants': participants, 'timestamp': datetime.datetime.now()}
+            return participants
+            break  # Выход из цикла, если операция успешна
+
+        except Exception as e:
+            print(f"get_participants_for_training: Ошибка при получении участников тренировки (попытка {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json', max_retries, retry_delay)
+                if client is None:
+                    print("get_participants_for_training: Не удалось восстановить подключение.")
+                    return []
+            else:
+                print("get_participants_for_training: Не удалось получить участников после нескольких попыток.")
+                return []
+
+
+def cancel_training_for_user(client, spreadsheet_name, training_date, training_price, user, new_status, max_retries=3, retry_delay=2):
+    if client is None:
+        print("cancel_training_for_user: Не удалось подключиться к Google Sheets.")
+        return
+
+    for attempt in range(max_retries):
+        try:
+            sheet = client.open(spreadsheet_name)
+            worksheet = sheet.worksheet("В.Расход")
+
+            start_time = time.time()
+
+            names_col = worksheet.col_values(1)
+            header_row = worksheet.row_values(4)
+            price_row = worksheet.row_values(3)
+
+            end_time = time.time()
+            print(f"cancel_training_for_user: Данные получены за {end_time - start_time:.4f} секунд (попытка {attempt + 1}/{max_retries})")
+
+            user_name = user['name']
+
+            if " (Вернуть оплату)" in user_name:
+                user_name_to_search = user_name.replace(" (Вернуть оплату)", "").strip()
+            else:
+                user_name_to_search = user_name
+
+            row_index = None
+            for i, name in enumerate(names_col):
+                if name == user_name_to_search:
+                    row_index = i + 1
+                    break
+
+            if row_index is None:
+                return
+
             col_index = None
             for i in reversed(range(len(header_row))):
                 header = header_row[i]
@@ -225,110 +415,21 @@ def update_training_status(client, spreadsheet_name, user_id, training_info, sta
             if col_index is None:
                 return
 
-            if col_index:
-                current_value = worksheet.cell(row_index, col_index).value
-                if current_value != "#": 
-                    worksheet.update_cell(row_index, col_index, status)
-    except Exception as e:
-        print(f"Ошибка при обновлении статуса тренировки в OpenAI Sheets: {e}")
-
-def get_participants_for_training(client, spreadsheet_name, training_date, training_price):
-    if client is None:
-        return []
-
-    cache_key = f"{training_date}_{training_price}"
-
-    cached_data = cache.get(cache_key)
-    if cached_data and 'timestamp' in cached_data and \
-            datetime.datetime.now() - cached_data['timestamp'] < datetime.timedelta(minutes=1):
-        return cached_data['participants']
-
-    try:
-        sheet = client.open(spreadsheet_name)
-        worksheet = sheet.worksheet("В.Расход")
-        
-        start_time = time.time()
-        data = worksheet.get_all_values()
-        data_array = np.array(data)
-
-        header_row = data_array[3, :]  
-        price_row = data_array[2, :]   
-        names_col = data_array[4:, 0]   
-        status_col = data_array[4:, :]
-
-        end_time = time.time()
-        print(f"get_participants_for_training: Данные получены за {end_time - start_time:.4f} секунд")
-
-        date_col_index = -1
-        for i in reversed(range(len(header_row))):
-            if header_row[i] == training_date and str(price_row[i]) == training_price:
-                date_col_index = i
+            try:
+                worksheet.update_cell(row_index, col_index, new_status)
+                break  # Выход из цикла, если операция успешна
+            except Exception as e:
+                print(f"cancel_training_for_user: Ошибка при обновлении ячейки (попытка {attempt + 1}/{max_retries}): {e}")
                 break
 
-        if date_col_index == -1:
-            return []
-
-        participants = []
-        for i, name in enumerate(names_col):
-            if i < status_col.shape[0]:
-                status = status_col[i, date_col_index]
-                if status in ("*", "1", "0"):
-                    participants.append({"name": name, "status": status})
-                elif status == "#":
-                    participants.append({"name": f"{name} (Вернуть оплату)", "status": status})
-
-        cache[cache_key] = {'participants': participants, 'timestamp': datetime.datetime.now()}
-        return participants
-
-    except Exception as e:
-        print(f"get_participants_for_training: Произошла ошибка: {e}")
-        return []
-
-def cancel_training_for_user(client, spreadsheet_name, training_date, training_price, user, new_status):
-    try:
-        sheet = client.open(spreadsheet_name)
-        worksheet = sheet.worksheet("В.Расход")
-
-        start_time = time.time()
-
-        names_col = worksheet.col_values(1)
-        header_row = worksheet.row_values(4)
-        price_row = worksheet.row_values(3)
-
-        end_time = time.time()
-        print(f"cancel_training_for_user: Данные получены за {end_time - start_time:.4f} секунд")
-
-        user_name = user['name']
-
-        if " (Вернуть оплату)" in user_name:
-            user_name_to_search = user_name.replace(" (Вернуть оплату)", "").strip()
-        else:
-            user_name_to_search = user_name
-
-        row_index = None
-        for i, name in enumerate(names_col):
-            if name == user_name_to_search:
-                row_index = i + 1
-                break
-
-        if row_index is None:
-            return
-        
-        col_index = None
-        for i in reversed(range(len(header_row))):
-            header = header_row[i]
-            if header == training_date:
-                if i < len(price_row) and str(price_row[i]) == training_price:
-                    col_index = i + 1
-                    break
-
-        if col_index is None:
-            return
-        
-        try: 
-            worksheet.update_cell(row_index, col_index, new_status)
         except Exception as e:
-            print(f"cancel_training_for_user: Ошибка при обновлении ячейки: {e}")
-
-    except Exception as e:
-        print(f"Error during cancelling training for user in Google Sheets: {e}")
+            print(f"cancel_training_for_user: Ошибка при отмене тренировки для пользователя (попытка {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                client = authenticate_google_sheets('vocal-circle-461812-m7-06081970720e.json', max_retries, retry_delay)
+                if client is None:
+                    print("cancel_training_for_user: Не удалось восстановить подключение.")
+                    return
+            else:
+                print("cancel_training_for_user: Не удалось отменить тренировку для пользователя после нескольких попыток.")
+                return
